@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0a0a0a">
+<title>naelbar</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icon.svg">
+<link rel="stylesheet" href="style.css?v=8">
+</head>
+<body>
+<main id="login" hidden>
+  <h1>naelbar</h1>
+  <p>Ton agenda, tes cours et tes post-its, partout. Une seule connexion.</p>
+  <button id="btn-login" class="primary">Continuer avec Google</button>
+  <p id="login-err" class="err" role="alert"></p>
+</main>
+
+<div id="app" hidden>
+  <!-- Agenda -->
+  <section id="tab-agenda" class="tab">
+    <header class="bar">
+      <div class="nav">
+        <button id="prev" class="icon" aria-label="Précédent">&#8249;</button>
+        <button id="today" class="ghost">Aujourd'hui</button>
+        <button id="next" class="icon" aria-label="Suivant">&#8250;</button>
+      </div>
+      <h2 id="period"></h2>
+      <div class="seg" role="tablist" aria-label="Vue">
+        <button data-view="day" role="tab">Jour</button>
+        <button data-view="week" role="tab">Semaine</button>
+        <button data-view="month" role="tab">Mois</button>
+      </div>
+    </header>
+    <div id="view" class="view"></div>
+    <p id="meta" class="meta"></p>
+    <button id="add" class="fab" aria-label="Ajouter un événement">+</button>
+  </section>
+
+  <!-- Post-it -->
+  <section id="tab-notes" class="tab" hidden>
+    <header class="bar"><h2>Post-it</h2></header>
+    <form id="note-form" class="row pad">
+      <input id="note-text" placeholder="Nouveau post-it" maxlength="500" required autocomplete="off">
+      <button class="primary" type="submit">Ajouter</button>
+    </form>
+    <ul id="notes" class="list pad"></ul>
+  </section>
+
+  <!-- PC -->
+  <section id="tab-pc" class="tab" hidden>
+    <header class="bar"><h2>PC</h2><span id="pc-state" class="pill">recherche…</span></header>
+    <div id="pc-locked" class="pad">
+      <p class="lead">Souris, clavier et fichiers se débloquent quand le téléphone est sur le même Wi-Fi que le PC allumé.</p>
+      <p class="meta" id="pc-why"></p>
+    </div>
+    <div id="pc-live" class="pad" hidden></div>
+    <div class="pad">
+      <h3>Scanner un cours</h3>
+      <div id="scan"></div>
+      <h3>Envoyer au PC</h3>
+      <label class="file"><input id="file-pick" type="file" multiple><span>Choisir des photos ou des fichiers</span></label>
+      <ul id="queue" class="list"></ul>
+      <h3>Compte</h3>
+      <button id="btn-logout" class="ghost">Se déconnecter</button>
+    </div>
+  </section>
+
+  <nav class="tabs" aria-label="Sections">
+    <button data-tab="agenda" class="on">Agenda</button>
+    <button data-tab="notes">Post-it</button>
+    <button data-tab="pc">PC</button>
+  </nav>
+</div>
+
+<!-- Feuille du bas : ajout, détail, couleur -->
+<div id="sheet-bg" class="sheet-bg" hidden></div>
+<div id="sheet" class="sheet" role="dialog" aria-modal="true" hidden></div>
+
+<script type="module" src="app.js?v=8"></script>
+</body>
+</html>

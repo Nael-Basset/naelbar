@@ -1,0 +1,30 @@
+[workspace]
+resolver = "3"
+members = ["crates/*"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+repository = ""
+
+[workspace.dependencies]
+nb-core = { path = "crates/nb-core" }
+nb-media = { path = "crates/nb-media" }
+nb-audio = { path = "crates/nb-audio" }
+nb-clipboard = { path = "crates/nb-clipboard" }
+nb-system = { path = "crates/nb-system" }
+nb-integrations = { path = "crates/nb-integrations" }
+windows = "0.62"
+windows-core = "0.62"
+windows-future = "0.3"
+webview2-com = "0.39"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[profile.release]
+opt-level = "s"
+lto = "fat"
+codegen-units = 1
+panic = "abort"
+strip = true

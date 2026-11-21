@@ -1,0 +1,25 @@
+[package]
+name = "nb-integrations"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+nb-core.workspace = true
+serde_json.workspace = true
+rusqlite = { version = "0.37", features = ["bundled"] }
+
+[dependencies.windows]
+workspace = true
+features = [
+    "Foundation",
+    "Foundation_Collections",
+    "ApplicationModel",
+    "UI_Notifications",
+    "UI_Notifications_Management",
+    "Win32_Networking_WinHttp",
+    "Win32_Foundation",
+    "Win32_Storage_FileSystem",
+    "Win32_System_IO",
+    "Win32_Security",
+]
