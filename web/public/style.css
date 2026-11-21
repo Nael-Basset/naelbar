@@ -121,3 +121,7 @@ h3{font-size:.8rem;font-weight:600;color:var(--mut);text-transform:uppercase;let
 .crumbs .link{min-height:32px;padding:4px 6px;font-weight:600;color:var(--fg)}
 .list .item{flex:1;text-align:left;min-height:44px;padding:8px 0;border-radius:0}
 button:disabled{opacity:.4;cursor:default}
+
+/* Musique */
+.remote{display:block;width:100%;height:calc(100dvh - 64px - env(safe-area-inset-bottom) - 56px - 50px);border:0;background:var(--bg)}
+.scan-video{width:100%;border-radius:12px;margin-top:10px;background:#000}

@@ -1,7 +1,8 @@
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js';
 import { getAuth, GoogleAuthProvider, signInWithPopup, signInWithRedirect, getRedirectResult, onAuthStateChanged, signOut, setPersistence, browserLocalPersistence } from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js';
 import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, collection, doc, setDoc, getDoc, getDocs, onSnapshot, writeBatch } from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js';
-import { startPc } from './pc.js?v=8';
+import { startPc } from './pc.js?v=9';
+import { startMusic } from './music.js?v=9';
 
 const app = initializeApp({
   apiKey: 'AIzaSyBvW_D77a2k3moCWtZMEREDh9dFdGXG0mM',
@@ -344,8 +345,9 @@ $('view').addEventListener('touchend', e => {
 
 document.querySelectorAll('.tabs button').forEach(b => b.onclick = () => {
   document.querySelectorAll('.tabs button').forEach(x => x.classList.toggle('on', x === b));
-  for (const t of ['agenda', 'notes', 'pc']) $('tab-' + t).hidden = t !== b.dataset.tab;
+  for (const t of ['agenda', 'notes', 'music', 'pc']) $('tab-' + t).hidden = t !== b.dataset.tab;
   $('add').hidden = b.dataset.tab !== 'agenda';
+  if (b.dataset.tab === 'music') music?.show(); else music?.hide();
 });
 $('note-form').onsubmit = ev => {
   ev.preventDefault();
@@ -387,7 +389,7 @@ function listen() {
 }
 
 let resolveReady; const ready = new Promise(r => resolveReady = r);
-let pcStarted = false;
+let pcStarted = false, music = null;
 onAuthStateChanged(auth, u => {
   nlog('état de connexion: ' + (u ? 'connecté' : 'déconnecté'));
   user = u;
@@ -395,7 +397,7 @@ onAuthStateChanged(auth, u => {
   unsubs.forEach(f => f()); unsubs = [];
   events = []; notes = []; courses = []; styles = [];
   if (u && !DESKTOP_APP) {
-    if (!PC_MODE) { listen(); render(); }
+    if (!PC_MODE) { listen(); render(); if (!music) music = startMusic({ db, uid: u.uid, ui: { $, el } }); }
     if (!pcStarted) { pcStarted = true; startPc({ db, uid: u.uid, pcMode: PC_MODE, log: nlog, ui: { $, el } }); }
   }
   resolveReady();

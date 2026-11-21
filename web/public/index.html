@@ -8,7 +8,7 @@
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="icon.svg">
-<link rel="stylesheet" href="style.css?v=8">
+<link rel="stylesheet" href="style.css?v=9">
 </head>
 <body>
 <main id="login" hidden>
@@ -49,6 +49,12 @@
     <ul id="notes" class="list pad"></ul>
   </section>
 
+  <!-- Musique -->
+  <section id="tab-music" class="tab" hidden>
+    <header class="bar"><h2>Musique</h2></header>
+    <div id="music"></div>
+  </section>
+
   <!-- PC -->
   <section id="tab-pc" class="tab" hidden>
     <header class="bar"><h2>PC</h2><span id="pc-state" class="pill">recherche…</span></header>
@@ -71,6 +77,7 @@
   <nav class="tabs" aria-label="Sections">
     <button data-tab="agenda" class="on">Agenda</button>
     <button data-tab="notes">Post-it</button>
+    <button data-tab="music">Musique</button>
     <button data-tab="pc">PC</button>
   </nav>
 </div>
@@ -79,6 +86,6 @@
 <div id="sheet-bg" class="sheet-bg" hidden></div>
 <div id="sheet" class="sheet" role="dialog" aria-modal="true" hidden></div>
 
-<script type="module" src="app.js?v=8"></script>
+<script type="module" src="app.js?v=9"></script>
 </body>
 </html>
