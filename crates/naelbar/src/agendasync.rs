@@ -660,7 +660,8 @@ unsafe fn on_environment(hwnd: HWND, environment: ICoreWebView2Environment) -> R
         let started = result
             .and_then(|()| controller.ok_or_else(|| Error::from(E_POINTER)))
             .and_then(|c| unsafe { on_controller(hwnd, c) });
-        if started.is_err() {
+        if let Err(e) = &started {
+            log(&format!("création de la vue impossible: {e}"));
             finish(EXIT_FAILED);
         }
         Ok(())
@@ -675,7 +676,8 @@ unsafe fn start_webview(hwnd: HWND) -> Result<()> {
         let started = result
             .and_then(|()| environment.ok_or_else(|| Error::from(E_POINTER)))
             .and_then(|e| unsafe { on_environment(hwnd, e) });
-        if started.is_err() {
+        if let Err(e) = &started {
+            log(&format!("environnement WebView2 impossible: {e}"));
             finish(EXIT_FAILED);
         }
         Ok(())

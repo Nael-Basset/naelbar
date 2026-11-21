@@ -422,6 +422,10 @@ unsafe fn host() -> Result<()> {
             return Ok(());
         }
         CoInitializeEx(None, COINIT_APARTMENTTHREADED).ok()?;
+        // Same awareness as the agenda sync and sign-in processes: WebView2
+        // refuses to share one profile between hosts that differ here
+        // (0x8007139F when the second one creates its view).
+        let _ = windows::Win32::UI::HiDpi::SetProcessDpiAwarenessContext(windows::Win32::UI::HiDpi::DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
         let instance = GetModuleHandleW(None)?.into();
         let class_name = w!("naelbar.phonelink");
         let class = WNDCLASSW { lpfnWndProc: Some(wndproc), hInstance: instance, lpszClassName: class_name, ..Default::default() };
