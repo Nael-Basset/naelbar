@@ -112,10 +112,23 @@ type Reply = (u16, &'static str, &'static str);
 
 const EMPTY_JSON: &str = "{}";
 
+/// A browser extension, which a web page cannot pretend to be.
+fn is_extension(origin: &str) -> bool {
+    origin.starts_with("chrome-extension://") || origin.starts_with("moz-extension://")
+}
+
+/// `ytm-` and 24 lowercase hex digits, as the extension makes them.
+pub fn valid_ytm_room(s: &str) -> bool {
+    s.len() == 28 && s.starts_with("ytm-") && s[4..].bytes().all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+}
+
 /// Pure request handler, separated from I/O for testing.
 pub(crate) fn handle_request(req: &Request, sink: &Sink) -> Reply {
-    if req.header("origin").is_some() {
-        return (403, "Forbidden", "browser requests are refused");
+    // Web pages are refused. Only the room report may come from an extension.
+    match req.header("origin") {
+        None => {}
+        Some(o) if req.path == "/ytm/room" && is_extension(o) => {}
+        Some(_) => return (403, "Forbidden", "browser requests are refused"),
     }
     match req.header("host") {
         Some(h) if http::host_is_loopback(h) => {}
@@ -140,7 +153,16 @@ pub(crate) fn handle_request(req: &Request, sink: &Sink) -> Reply {
             }
             (200, "OK", EMPTY_JSON)
         }
-        (_, "/notify" | "/agent" | "/claude/usage" | "/claude/hook") => (405, "Method Not Allowed", ""),
+        ("POST", "/ytm/room") => {
+            let room = String::from_utf8_lossy(&req.body);
+            let room = room.trim();
+            if req.oversized || !valid_ytm_room(room) {
+                return (400, "Bad Request", "");
+            }
+            sink(Event::YtmRoom(room.to_string()));
+            (204, "No Content", "")
+        }
+        (_, "/notify" | "/agent" | "/claude/usage" | "/claude/hook" | "/ytm/room") => (405, "Method Not Allowed", ""),
         _ => (404, "Not Found", ""),
     }
 }
@@ -390,5 +412,18 @@ mod tests {
         let (sink, _) = collector();
         let h = start(sink, Config { enabled: false, port: 0 }).unwrap();
         assert_eq!(h.port(), None);
+    }
+
+    #[test]
+    fn the_extension_reports_its_room() {
+        let (sink, events) = collector();
+        let room = b"ytm-0123456789abcdef01234567";
+        let ext = ("Origin", "chrome-extension://abcdefghijklmnop");
+        assert_eq!(handle_request(&req("POST", "/ytm/room", &[H, ext], room), &sink).0, 204);
+        assert_eq!(handle_request(&req("POST", "/ytm/room", &[H, ("Origin", "https://music.youtube.com")], room), &sink).0, 403);
+        assert_eq!(handle_request(&req("POST", "/notify?title=a", &[H, ext], b""), &sink).0, 403);
+        assert_eq!(handle_request(&req("POST", "/ytm/room", &[H, ext], b"ytm-short"), &sink).0, 400);
+        assert_eq!(handle_request(&req("GET", "/ytm/room", &[H], b""), &sink).0, 405);
+        assert!(matches!(events.lock().unwrap().as_slice(), [Event::YtmRoom(r)] if r == "ytm-0123456789abcdef01234567"));
     }
 }

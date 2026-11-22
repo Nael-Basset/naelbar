@@ -37,7 +37,7 @@ use crate::webusage::{EXIT_FAILED, EXIT_OK, EXIT_SIGN_IN, fit_to_client, login_r
 
 const HOST: &str = "naelbar-agenda-eadafc.web.app";
 /// `desktop=1` makes the page sign in by redirect, as an embedded view has no popup.
-const PAGE_URL: PCWSTR = w!("https://naelbar-agenda-eadafc.web.app/?desktop=1&v=8");
+const PAGE_URL: PCWSTR = w!("https://naelbar-agenda-eadafc.web.app/?desktop=1&v=10");
 
 const DEADLINE_TIMER: usize = 1;
 const DEADLINE_MS: u32 = 30_000;

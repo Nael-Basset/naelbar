@@ -35,7 +35,7 @@ use windows::core::{BOOL, Error, HSTRING, PCWSTR, PWSTR, Result, w};
 
 use super::input::{self, Injector};
 
-const PAGE_URL: PCWSTR = w!("https://naelbar-agenda-eadafc.web.app/?pc=1&v=8");
+const PAGE_URL: PCWSTR = w!("https://naelbar-agenda-eadafc.web.app/?pc=1&v=10");
 /// Retries a page that failed to load (no network at boot), and only then.
 const RETRY_TIMER: usize = 1;
 const RETRY_MS: u32 = 60_000;
@@ -300,6 +300,19 @@ unsafe fn on_web_message(webview: &ICoreWebView2, args: &ICoreWebView2WebMessage
 
 // ---------------------------------------------------------------- window and webview
 
+/// Hands the last room the extension reported to the page, which files it
+/// in the account.
+fn send_ytm_room() {
+    let Some(room) = super::ytm_room_path().and_then(|p| std::fs::read_to_string(p).ok()) else { return };
+    let room = room.trim();
+    if !nb_integrations::valid_ytm_room(room) {
+        return;
+    }
+    if let Some(wv) = controller().and_then(|c| unsafe { c.CoreWebView2() }.ok()) {
+        reply(&wv, json!({"ytmRoom": room}));
+    }
+}
+
 fn controller() -> Option<ICoreWebView2Controller> {
     CONTROLLER.with_borrow(Clone::clone)
 }
@@ -314,6 +327,10 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
                     }
                 }
             }
+            LRESULT(0)
+        }
+        super::WM_YTM_ROOM => {
+            send_ytm_room();
             LRESULT(0)
         }
         WM_CLOSE => {
@@ -341,6 +358,7 @@ unsafe fn on_controller(hwnd: HWND, controller: ICoreWebView2Controller) -> Resu
                 let _ = args.IsSuccess(&mut ok);
                 if ok.as_bool() {
                     let _ = KillTimer(Some(hwnd), RETRY_TIMER);
+                    send_ytm_room();
                 } else {
                     SetTimer(Some(hwnd), RETRY_TIMER, RETRY_MS, None);
                 }

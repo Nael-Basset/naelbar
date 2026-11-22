@@ -46,6 +46,11 @@ function pcRole({ db, uid, log }) {
     const m = e.data;
     if (m && typeof m.fileDone === 'string' && files?.readyState === 'open') files.send(JSON.stringify({ t: 'ok', id: m.fileDone, ok: !!m.ok }));
     if (m && m.dirsReply && files?.readyState === 'open') files.send(JSON.stringify({ ...m.dirsReply, t: 'dirs' }));
+    // Salon de la télécommande YouTube Music, signalé par l'extension à
+    // naelbar : l'onglet Musique du téléphone s'y connecte tout seul.
+    if (m && typeof m.ytmRoom === 'string' && /^ytm-[a-f0-9]{24}$/.test(m.ytmRoom)) {
+      setDoc(doc(db, 'users', uid, 'meta', 'music'), { room: m.ytmRoom, updated_at_ms: Date.now() }).catch(() => log('salon musique non enregistré'));
+    }
   });
 
   const b64 = buf => {

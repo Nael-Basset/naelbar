@@ -693,6 +693,10 @@ impl App {
                     if matches!(e, Event::Sonar(_)) && self.input.down {
                         continue;
                     }
+                    if let Event::YtmRoom(room) = &e {
+                        crate::phone::share_ytm_room(room);
+                        continue;
+                    }
                     if matches!(&e, Event::Notification(n) if nb_integrations::is_ignored_app(&n.app_id, &self.config.ignore_apps)) {
                         continue;
                     }

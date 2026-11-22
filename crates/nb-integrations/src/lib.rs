@@ -15,7 +15,7 @@ mod wpn;
 use std::fmt;
 
 pub use claude::statusline_forward;
-pub use endpoint::{Config, DEFAULT_PORT, Handle, start};
+pub use endpoint::{Config, DEFAULT_PORT, Handle, start, valid_ytm_room};
 pub use hooks::{MergeReport, StatusLineOutcome, claude_code_hook_snippet, merge_claude_code_settings};
 pub use toast::{ToastMirror, start_toast_mirror};
 pub use steelseries::{sonar_refresh, sonar_set_volume};

@@ -26,6 +26,31 @@ pub const DEFAULT_PORT: u16 = 47912;
 
 static CHILD: Mutex<Option<Child>> = Mutex::new(None);
 
+/// Posted to the helper's window when the extension reported a new room.
+pub const WM_YTM_ROOM: u32 = windows::Win32::UI::WindowsAndMessaging::WM_APP + 71;
+
+pub fn ytm_room_path() -> Option<std::path::PathBuf> {
+    std::env::var_os("LOCALAPPDATA").map(|d| std::path::PathBuf::from(d).join("naelbar").join("ytm-room"))
+}
+
+/// Keeps the room of the YouTube Music remote and tells the helper, which
+/// files it in the account for the phone's Music tab.
+pub fn share_ytm_room(room: &str) {
+    let Some(p) = ytm_room_path() else { return };
+    if std::fs::read_to_string(&p).is_ok_and(|old| old.trim() == room) {
+        return;
+    }
+    let _ = std::fs::create_dir_all(p.parent().unwrap_or(&p));
+    let _ = std::fs::write(&p, room);
+    use windows::Win32::Foundation::{LPARAM, WPARAM};
+    use windows::Win32::UI::WindowsAndMessaging::{FindWindowW, PostMessageW};
+    unsafe {
+        if let Ok(h) = FindWindowW(windows::core::w!("naelbar.phonelink"), windows::core::w!("naelbar phone link")) {
+            let _ = PostMessageW(Some(h), WM_YTM_ROOM, WPARAM(0), LPARAM(0));
+        }
+    }
+}
+
 /// Starts or stops the helper to match the config. Called at startup and
 /// whenever the config file changes.
 pub fn sync(cfg: &Config) {

@@ -11,6 +11,9 @@ pub type Sink = Arc<dyn Fn(Event) + Send + Sync + 'static>;
 
 #[derive(Debug, Clone)]
 pub enum Event {
+    /// Room of the YouTube Music extension's remote, reported by the
+    /// extension when its tab opens one (`ytm-` and 24 hex digits).
+    YtmRoom(String),
     /// `None` when no media session exists any more.
     Media(Option<MediaState>),
     /// App ids (AUMID) of the media sessions that exist now, sorted.
