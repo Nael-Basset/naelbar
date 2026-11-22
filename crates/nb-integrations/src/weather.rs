@@ -126,6 +126,42 @@ fn https_get(host: &str, path: &str) -> Result<Vec<u8>, Error> {
     https_get_max(host, path, 64 * 1024)
 }
 
+/// Where a GET over HTTPS redirects to (the `Location` of a 301/302), without
+/// following it.
+pub(crate) fn https_location(host: &str, path: &str) -> Result<String, Error> {
+    unsafe {
+        let session = Internet(WinHttpOpen(w!("naelbar"), WINHTTP_ACCESS_TYPE_AUTOMATIC_PROXY, PCWSTR::null(), PCWSTR::null(), 0));
+        if session.0.is_null() {
+            return Err(Error::Os(windows::core::Error::from_thread()));
+        }
+        WinHttpSetTimeouts(session.0, 5000, 5000, 5000, 8000)?;
+        let conn = Internet(WinHttpConnect(session.0, &HSTRING::from(host), 443, 0));
+        if conn.0.is_null() {
+            return Err(Error::Os(windows::core::Error::from_thread()));
+        }
+        let req = Internet(WinHttpOpenRequest(conn.0, w!("GET"), &HSTRING::from(path), PCWSTR::null(), PCWSTR::null(), std::ptr::null(), WINHTTP_FLAG_SECURE));
+        if req.0.is_null() {
+            return Err(Error::Os(windows::core::Error::from_thread()));
+        }
+        let off = WINHTTP_DISABLE_REDIRECTS.to_ne_bytes();
+        WinHttpSetOption(Some(req.0), WINHTTP_OPTION_DISABLE_FEATURE, Some(&off)).map_err(|e| Error::Network(e.to_string()))?;
+        WinHttpSendRequest(req.0, None, None, 0, 0, 0).map_err(|e| Error::Network(e.to_string()))?;
+        WinHttpReceiveResponse(req.0, std::ptr::null_mut()).map_err(|e| Error::Network(e.to_string()))?;
+        let mut status = 0u32;
+        let mut len = std::mem::size_of::<u32>() as u32;
+        WinHttpQueryHeaders(req.0, WINHTTP_QUERY_STATUS_CODE | WINHTTP_QUERY_FLAG_NUMBER, PCWSTR::null(), Some((&mut status as *mut u32).cast()), &mut len, std::ptr::null_mut())
+            .map_err(|e| Error::Network(e.to_string()))?;
+        if !matches!(status, 301 | 302 | 303 | 307 | 308) {
+            return Err(Error::Network(format!("HTTP {status}")));
+        }
+        let mut buf = [0u16; 1024];
+        let mut len = std::mem::size_of_val(&buf) as u32;
+        WinHttpQueryHeaders(req.0, WINHTTP_QUERY_LOCATION, PCWSTR::null(), Some(buf.as_mut_ptr().cast()), &mut len, std::ptr::null_mut())
+            .map_err(|e| Error::Network(e.to_string()))?;
+        Ok(String::from_utf16_lossy(&buf[..len as usize / 2]))
+    }
+}
+
 /// GET over HTTPS, following redirects, refusing any status but 200 and any
 /// body larger than `max`.
 pub(crate) fn https_get_max(host: &str, path: &str, max: usize) -> Result<Vec<u8>, Error> {
