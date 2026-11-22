@@ -5,6 +5,9 @@ use crate::Error;
 
 const REPO: &str = "Nael-Basset/naelbar";
 const ASSET: &str = "naelbar.exe";
+/// The YouTube Music extension, for Chromium browsers.
+const EXT_REPO: &str = "Nael-Basset/ytm-remote";
+const EXT_ASSET: &str = "youtube_music_player_chrome.zip";
 /// An executable larger than this is not ours.
 const MAX_EXE: usize = 64 * 1024 * 1024;
 
@@ -25,14 +28,18 @@ fn parse_version(s: &str) -> Option<(u32, u32, u32)> {
 
 /// The latest release when it is newer than `current` and carries the exe.
 pub(crate) fn parse_latest(body: &[u8], current: &str) -> Result<Option<Release>, Error> {
+    parse_release(body, current, REPO, ASSET)
+}
+
+fn parse_release(body: &[u8], current: &str, repo: &str, asset: &str) -> Result<Option<Release>, Error> {
     let v: serde_json::Value = serde_json::from_slice(body).map_err(|e| Error::Json(e.to_string()))?;
     let tag = v["tag_name"].as_str().unwrap_or_default();
     let (Some(latest), Some(now)) = (parse_version(tag), parse_version(current)) else { return Ok(None) };
     if latest <= now || v["draft"].as_bool() == Some(true) || v["prerelease"].as_bool() == Some(true) {
         return Ok(None);
     }
-    let prefix = format!("https://github.com/{REPO}/releases/download/");
-    let path = v["assets"].as_array().into_iter().flatten().find(|a| a["name"].as_str() == Some(ASSET)).and_then(|a| a["browser_download_url"].as_str()).filter(|u| u.starts_with(&prefix)).and_then(|u| u.strip_prefix("https://github.com"));
+    let prefix = format!("https://github.com/{repo}/releases/download/");
+    let path = v["assets"].as_array().into_iter().flatten().find(|a| a["name"].as_str() == Some(asset)).and_then(|a| a["browser_download_url"].as_str()).filter(|u| u.starts_with(&prefix)).and_then(|u| u.strip_prefix("https://github.com"));
     Ok(path.map(|p| Release { version: tag.trim_start_matches('v').to_string(), path: p.to_string() }))
 }
 
@@ -49,6 +56,22 @@ pub fn download_update(r: &Release) -> Result<Vec<u8>, Error> {
         return Err(Error::Network("not an executable".into()));
     }
     Ok(exe)
+}
+
+/// The extension's latest release, when newer than `current` (`None`: not
+/// installed yet, any release will do).
+pub fn check_extension(current: Option<&str>) -> Result<Option<Release>, Error> {
+    let body = crate::weather::https_get_max("api.github.com", &format!("/repos/{EXT_REPO}/releases/latest"), 256 * 1024)?;
+    parse_release(&body, current.unwrap_or("0.0.0"), EXT_REPO, EXT_ASSET)
+}
+
+/// Downloads the extension's zip and checks it looks like one.
+pub fn download_extension(r: &Release) -> Result<Vec<u8>, Error> {
+    let zip = crate::weather::https_get_max("github.com", &r.path, 16 * 1024 * 1024)?;
+    if zip.len() < 1024 || !zip.starts_with(b"PK") {
+        return Err(Error::Network("not a zip".into()));
+    }
+    Ok(zip)
 }
 
 #[cfg(test)]
@@ -79,6 +102,16 @@ mod tests {
         // An asset hosted anywhere else is ignored.
         assert_eq!(parse_latest(&body("v0.2.0", "https://evil.example/naelbar.exe"), "0.1.1").unwrap(), None);
         assert!(parse_latest(b"not json", "0.1.1").is_err());
+    }
+
+    #[test]
+    fn extension_release() {
+        let b = serde_json::json!({"tag_name": "v1.19.0", "assets": [{"name": "youtube_music_player_chrome.zip", "browser_download_url": "https://github.com/Nael-Basset/ytm-remote/releases/download/v1.19.0/youtube_music_player_chrome.zip"}]}).to_string();
+        let r = parse_release(b.as_bytes(), "0.0.0", EXT_REPO, EXT_ASSET).unwrap().unwrap();
+        assert_eq!(r.version, "1.19.0");
+        assert_eq!(parse_release(b.as_bytes(), "1.19.0", EXT_REPO, EXT_ASSET).unwrap(), None);
+        // The naelbar repo's link does not pass for the extension.
+        assert_eq!(parse_release(b.as_bytes(), "0.0.0", REPO, EXT_ASSET).unwrap(), None);
     }
 
     /// Talks to GitHub: `cargo test -p nb-integrations -- --ignored live`.

@@ -133,6 +133,7 @@ type SetF = fn(&mut Config, f32);
 type Opt = (&'static str, &'static str, &'static str);
 
 enum Ctl {
+    YtmExtension,
     Choice(GetS, SetS, &'static [Opt]),
     Slider { get: GetF, set: SetF, min: f32, max: f32, step: f32, unit: Unit },
     Autostart,
@@ -474,6 +475,13 @@ static ROWS: &[Row] = &[
     Row {
         section: MUSIC_SECTION,
         only: Only::Any,
+        title: ("Extension YouTube Music", "YouTube Music extension"),
+        desc: ("La télécommande du téléphone. naelbar la tient à jour : charge son dossier une fois dans le navigateur (Mode développeur, Charger l'extension non empaquetée).", "The phone remote. naelbar keeps it up to date: load its folder once in the browser (Developer mode, Load unpacked)."),
+        ctl: Ctl::YtmExtension,
+    },
+    Row {
+        section: MUSIC_SECTION,
+        only: Only::Any,
         title: ("Visualiseur", "Visualizer"),
         desc: ("Dans l'îlot fermé, pendant la lecture.", "In the closed island, while music plays."),
         ctl: Ctl::Choice(|c| &c.visualizer, |c, v| c.visualizer = v.into(), &[("bars", "Barres", "Bars"), ("pixels", "Pixels", "Pixels"), ("none", "Aucun", "None")]),
@@ -537,6 +545,27 @@ static ROWS: &[Row] = &[
     },
 ];
 
+/// Installing the extension, and what came of it.
+static EXT_STATUS: std::sync::Mutex<String> = std::sync::Mutex::new(String::new());
+
+fn install_extension(hwnd: HWND) {
+    *EXT_STATUS.lock().unwrap_or_else(|e| e.into_inner()) = tr("Téléchargement…", "Downloading…").into();
+    let hwnd = hwnd.0 as isize;
+    std::thread::spawn(move || {
+        let msg = match crate::ytmext::refresh(true) {
+            Ok(_) => {
+                crate::ytmext::reveal();
+                tr("Installée, chemin copié", "Installed, path copied").to_string()
+            }
+            Err(_) => tr("Pas de connexion à GitHub", "Cannot reach GitHub").to_string(),
+        };
+        *EXT_STATUS.lock().unwrap_or_else(|e| e.into_inner()) = msg;
+        unsafe {
+            let _ = windows::Win32::Graphics::Gdi::InvalidateRect(Some(HWND(hwnd as *mut _)), None, false);
+        }
+    });
+}
+
 /// What the "Check" button found, shown next to the version.
 static UPDATE_STATUS: std::sync::Mutex<String> = std::sync::Mutex::new(String::new());
 
@@ -547,6 +576,8 @@ fn check_update(hwnd: HWND) {
     set(tr("Recherche…", "Checking…").into());
     let hwnd = hwnd.0 as isize;
     std::thread::spawn(move || {
+        // The extension too, when naelbar looks after it.
+        let _ = crate::ytmext::refresh(false);
         let msg = match nb_integrations::check_update(env!("CARGO_PKG_VERSION")) {
             Ok(None) => tr("À jour", "Up to date").to_string(),
             Ok(Some(r)) => unsafe {
@@ -1103,6 +1134,24 @@ impl Settings {
                         if let Some(p) = pick_folder(self.hwnd) {
                             self.cfg.courses_root = p;
                             save = true;
+                        }
+                    }
+                }
+                Ctl::YtmExtension => {
+                    let r = Rect::new(ctrl.right() - 110.0, ctrl.y, 110.0, ctrl.h);
+                    let installed = crate::ytmext::installed_version();
+                    let status = EXT_STATUS.lock().unwrap_or_else(|e| e.into_inner()).clone();
+                    let label = if !status.is_empty() { status } else { installed.clone().unwrap_or_else(|| tr("Non installée", "Not installed").into()) };
+                    ui.text(Rect::new(ctrl.x - 120.0, ctrl.y, ctrl.w + 120.0 - 122.0, ctrl.h), &label, TextStyle::new(13.0, 500, TEXT_DIM).aligned(Align::End));
+                    if button(&mut ui, w, r, if installed.is_some() { tr("Dossier", "Folder") } else { tr("Installer", "Install") }) {
+                        if let Some(d) = crate::ytmext::dir() {
+                            crate::widgets::clip::set_text(self.hwnd, &d.to_string_lossy());
+                        }
+                        if installed.is_some() {
+                            crate::ytmext::reveal();
+                            *EXT_STATUS.lock().unwrap_or_else(|e| e.into_inner()) = tr("Chemin copié", "Path copied").into();
+                        } else {
+                            install_extension(self.hwnd);
                         }
                     }
                 }

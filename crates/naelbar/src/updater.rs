@@ -69,6 +69,18 @@ pub fn start(sink: Sink) {
 
 /// One check, and the update if there is one. True when the island restarts.
 fn run(exe: &Path, sink: &Sink) -> bool {
+    // The extension first: a naelbar update restarts the island.
+    match crate::ytmext::refresh(false) {
+        Ok(Some(v)) => sink(Event::Notification(nb_core::Notification {
+            source: "naelbar".into(),
+            title: format!("Extension YouTube Music {v}"),
+            body: "Mise à jour. Actualise-la dans la page des extensions du navigateur.".into(),
+            received_at_ms: crate::state::unix_ms(),
+            app_id: String::new(),
+        })),
+        Ok(None) => {}
+        Err(e) => note(&format!("extension, échec : {e}")),
+    }
     match update(exe) {
         Ok(Some(version)) => {
             note(&format!("installée : {version}"));

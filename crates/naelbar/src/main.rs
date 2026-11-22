@@ -30,6 +30,7 @@ mod settings;
 mod state;
 mod tray;
 mod updater;
+mod ytmext;
 mod ui;
 mod views;
 mod visualizer;
