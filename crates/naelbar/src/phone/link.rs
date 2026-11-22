@@ -292,6 +292,10 @@ unsafe fn on_web_message(webview: &ICoreWebView2, args: &ICoreWebView2WebMessage
         on_file(webview, f);
     } else if let Some(d) = v.get("naelbarDirs") {
         on_dirs(webview, d);
+    } else if v.get("naelbarYtm").is_some() {
+        // The page is signed in and listening: it asks for the room, which
+        // otherwise only arrives when the extension opens a new one.
+        send_ytm_room();
     } else if v.get("naelbarPeer").and_then(Value::as_str) == Some("closed") {
         peer_closed();
     }

@@ -1,8 +1,8 @@
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js';
 import { getAuth, GoogleAuthProvider, signInWithPopup, signInWithRedirect, getRedirectResult, onAuthStateChanged, signOut, setPersistence, browserLocalPersistence } from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js';
 import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, collection, doc, setDoc, getDoc, getDocs, onSnapshot, writeBatch } from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js';
-import { startPc } from './pc.js?v=12';
-import { startMusic } from './music.js?v=12';
+import { startPc } from './pc.js?v=14';
+import { startMusic } from './music.js?v=14';
 
 const app = initializeApp({
   apiKey: 'AIzaSyBvW_D77a2k3moCWtZMEREDh9dFdGXG0mM',

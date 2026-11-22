@@ -28,8 +28,16 @@ function gathered(pc, ms = 2500) {
 }
 
 export function startPc(opts) {
-  if (!('RTCPeerConnection' in window)) { opts.log?.('WebRTC indisponible'); return; }
-  if (opts.pcMode) pcRole(opts); else phoneRole(opts);
+  // Sans ça, l'onglet PC resterait sur « recherche… » sans dire pourquoi.
+  const fail = why => {
+    opts.log?.(why);
+    const $ = opts.ui?.$; if (!$ || opts.pcMode) return;
+    $('pc-state').textContent = 'indisponible';
+    $('pc-why').textContent = why;
+  };
+  if (!('RTCPeerConnection' in window)) return fail('Ce navigateur bloque WebRTC, nécessaire au lien avec le PC. Essaie avec Chrome, ou réactive WebRTC dans les réglages de confidentialité.');
+  try { if (opts.pcMode) pcRole(opts); else phoneRole(opts); }
+  catch (e) { fail('Lien avec le PC impossible : ' + (e?.message || e)); }
 }
 
 // ================================================================ PC
@@ -52,6 +60,9 @@ function pcRole({ db, uid, log }) {
       setDoc(doc(db, 'users', uid, 'meta', 'music'), { room: m.ytmRoom, updated_at_ms: Date.now() }).catch(() => log('salon musique non enregistré'));
     }
   });
+  // Connecté et à l'écoute : demande le dernier salon connu, sinon il n'arrive
+  // que quand l'extension en ouvre un nouveau.
+  post({ naelbarYtm: 'get' });
 
   const b64 = buf => {
     const bytes = new Uint8Array(buf); let s = '';
