@@ -284,6 +284,10 @@ unsafe fn on_web_message(webview: &ICoreWebView2, args: &ICoreWebView2WebMessage
         args.WebMessageAsJson(&mut message)?;
     }
     let Ok(v) = serde_json::from_str::<Value>(&take_pwstr(message)) else { return Ok(()) };
+    if let Some(l) = v.get("naelbarLog").and_then(Value::as_str) {
+        page_log(l);
+        return Ok(());
+    }
     if let Some(text) = v.get("naelbarInput").and_then(Value::as_str) {
         if let Some(m) = input::parse(text) {
             INJECTOR.with_borrow_mut(|inj| input::send(&inj.plan(&m)));
@@ -303,6 +307,21 @@ unsafe fn on_web_message(webview: &ICoreWebView2, args: &ICoreWebView2WebMessage
 }
 
 // ---------------------------------------------------------------- window and webview
+
+/// Last lines the page reported (sign-in, link state), in
+/// `%LOCALAPPDATA%\naelbar\phone-link.log`. Started afresh with each helper
+/// and capped, so it never grows.
+fn page_log(line: &str) {
+    use std::io::Write;
+    let Some(p) = super::ytm_room_path().map(|p| p.with_file_name("phone-link.log")) else { return };
+    if std::fs::metadata(&p).is_ok_and(|m| m.len() > 64 * 1024) {
+        return;
+    }
+    if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(&p) {
+        let t = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
+        let _ = writeln!(f, "[{t}] {}", line.chars().take(200).collect::<String>());
+    }
+}
 
 /// Hands the last room the extension reported to the page, which files it
 /// in the account.
@@ -443,6 +462,7 @@ unsafe fn host() -> Result<()> {
         if windows::Win32::Foundation::GetLastError() == windows::Win32::Foundation::ERROR_ALREADY_EXISTS {
             return Ok(());
         }
+        let _ = super::ytm_room_path().map(|p| std::fs::remove_file(p.with_file_name("phone-link.log")));
         CoInitializeEx(None, COINIT_APARTMENTTHREADED).ok()?;
         // Same awareness as the agenda sync and sign-in processes: WebView2
         // refuses to share one profile between hosts that differ here

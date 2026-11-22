@@ -80,7 +80,7 @@ function pcRole({ db, uid, log }) {
   onSnapshot(offerRef, async snap => {
     const o = snap.data();
     if (!o || typeof o.sdp !== 'string' || typeof o.sid !== 'string' || o.sid === lastSid) return;
-    if (Date.now() - (Number(o.at) || 0) > OFFER_MAX_AGE) return;
+    if (Date.now() - (Number(o.at) || 0) > OFFER_MAX_AGE) { log('offre ignorée, trop ancienne de ' + Math.round((Date.now() - (Number(o.at) || 0)) / 1000) + ' s'); return; }
     lastSid = o.sid;
     close();
     log('offre reçue');
@@ -107,14 +107,17 @@ function pcRole({ db, uid, log }) {
         };
       }
     };
-    p.onconnectionstatechange = () => { if (['failed', 'closed', 'disconnected'].includes(p.connectionState) && pc === p) close(); };
+    p.onconnectionstatechange = () => { log('connexion: ' + p.connectionState); if (['failed', 'closed', 'disconnected'].includes(p.connectionState) && pc === p) close(); };
     try {
       await p.setRemoteDescription({ type: 'offer', sdp: o.sdp });
       await p.setLocalDescription(await p.createAnswer());
       await gathered(p);
+      const hosts = (p.localDescription.sdp.match(/^a=candidate:.*$/gm) || []).length;
       await setDoc(answerRef, { sdp: p.localDescription.sdp, sid: o.sid, at: Date.now() });
-    } catch (e) { log('réponse impossible'); if (pc === p) close(); }
-  }, () => log('écoute impossible'));
+      log('réponse envoyée, ' + hosts + ' adresse(s) locale(s)');
+    } catch (e) { log('réponse impossible: ' + (e?.message || e)); if (pc === p) close(); }
+  }, e => log('écoute impossible: ' + (e?.code || e)));
+  log('PC prêt, en attente du téléphone');
 }
 
 // ================================================================ Téléphone
