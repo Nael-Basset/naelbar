@@ -258,7 +258,7 @@ impl AppState {
             }
             Event::Screens(s) => self.screens = s,
             // Handed to the phone link by the island, not kept here.
-            Event::YtmRoom(_) => {}
+            Event::YtmRoom(_) | Event::UpdateReady(_) => {}
             Event::Foreground(f) => self.foreground = Some(f),
             Event::Stats(s) => self.stats = Some(s),
             Event::Processes(p) => self.processes = p,

@@ -8,6 +8,7 @@ mod endpoint;
 mod hooks;
 mod http;
 mod toast;
+mod update;
 mod weather;
 mod steelseries;
 mod wpn;
@@ -20,6 +21,7 @@ pub use hooks::{MergeReport, StatusLineOutcome, claude_code_hook_snippet, merge_
 pub use toast::{ToastMirror, start_toast_mirror};
 pub use steelseries::{sonar_refresh, sonar_set_volume};
 pub use wpn::{WpnMirror, is_ignored_app, start_wpn_mirror};
+pub use update::{Release, check_update, download_update};
 pub use weather::{fetch_weather, fetch_weather_blocking, geocode_blocking, wmo_label_fr};
 
 #[derive(Debug)]

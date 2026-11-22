@@ -29,6 +29,7 @@ mod shelf_store;
 mod settings;
 mod state;
 mod tray;
+mod updater;
 mod ui;
 mod views;
 mod visualizer;
@@ -115,7 +116,7 @@ fn main() {
         }
         return;
     }
-    unsafe {
+    let mutex = unsafe {
         let _ = SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
         if let Some(name) = std::env::args().find_map(|a| a.strip_prefix("--desktop-widget=").map(str::to_string)) {
             if OleInitialize(None).is_ok() {
@@ -150,11 +151,22 @@ fn main() {
         if OleInitialize(None).is_err() {
             return;
         }
-    }
+        mutex
+    };
     let demo = std::env::args().any(|a| a == "--demo");
     let start_open = std::env::args().any(|a| a == "--open");
     let start_tab = std::env::args().find_map(|a| a.strip_prefix("--tab=").map(str::to_string));
     if let Err(e) = app::run(demo, start_open, start_tab) {
         eprintln!("naelbar: {e}");
+    }
+    // The new version takes the single-instance lock once this one let go.
+    if updater::RESTART.load(std::sync::atomic::Ordering::SeqCst) {
+        if let Ok(m) = mutex {
+            unsafe {
+                let _ = windows::Win32::System::Threading::ReleaseMutex(m);
+                let _ = windows::Win32::Foundation::CloseHandle(m);
+            }
+        }
+        updater::relaunch_if_updated();
     }
 }

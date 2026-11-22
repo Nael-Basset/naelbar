@@ -252,6 +252,7 @@ pub fn run(demo: bool, start_open: bool, start_tab: Option<String>) -> Result<()
         let tab = views.iter().position(|v| v.name() == config.last_tab).unwrap_or(0);
         let saved_tab = config.last_tab.clone();
         let tray = Tray::add(ctrl);
+        crate::updater::start(sink.clone());
         let mut services = Services::start(sink, demo, config.weather_location);
 
         let (pill_w, pill_h, pill_r) = pill_metrics(&config);
@@ -693,6 +694,11 @@ impl App {
                     if matches!(e, Event::Sonar(_)) && self.input.down {
                         continue;
                     }
+                    if let Event::UpdateReady(_) = &e {
+                        crate::updater::RESTART.store(true, std::sync::atomic::Ordering::SeqCst);
+                        unsafe { PostQuitMessage(0) };
+                        continue;
+                    }
                     if let Event::YtmRoom(room) = &e {
                         crate::phone::share_ytm_room(room);
                         continue;
@@ -710,6 +716,12 @@ impl App {
                         }
                     }
                     let devices_read = matches!(&e, Event::Devices(_));
+                    // Another always-on-top window that came forward (a
+                    // launcher, an overlay) would stay above the island:
+                    // take the top back whenever the active window changes.
+                    if matches!(&e, Event::Foreground(_)) {
+                        self.raise();
+                    }
                     self.state.apply(e);
                     if devices_read {
                         self.arm_device_poll(self.state.hud.wants_devices() && !self.state.batteries.devices.is_empty());
@@ -1202,6 +1214,16 @@ impl App {
         self.config.last_tab = self.views[self.tab].name().to_string();
         self.saved_tab = self.config.last_tab.clone();
         self.config.save();
+    }
+
+    /// Puts both island windows back at the top of the always-on-top band,
+    /// without moving, sizing or activating them.
+    fn raise(&self) {
+        let flags = SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_NOOWNERZORDER;
+        unsafe {
+            let _ = SetWindowPos(self.visual, Some(HWND_TOPMOST), 0, 0, 0, 0, flags);
+            let _ = SetWindowPos(self.hit, Some(HWND_TOPMOST), 0, 0, 0, 0, flags);
+        }
     }
 
     fn reposition(&mut self) {

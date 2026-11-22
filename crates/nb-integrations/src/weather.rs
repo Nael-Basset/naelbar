@@ -123,7 +123,12 @@ impl Drop for Internet {
 }
 
 fn https_get(host: &str, path: &str) -> Result<Vec<u8>, Error> {
-    const MAX: usize = 64 * 1024;
+    https_get_max(host, path, 64 * 1024)
+}
+
+/// GET over HTTPS, following redirects, refusing any status but 200 and any
+/// body larger than `max`.
+pub(crate) fn https_get_max(host: &str, path: &str, max: usize) -> Result<Vec<u8>, Error> {
     unsafe {
         let session = Internet(WinHttpOpen(
             w!("naelbar"),
@@ -156,6 +161,13 @@ fn https_get(host: &str, path: &str) -> Result<Vec<u8>, Error> {
         }
         WinHttpSendRequest(req.0, None, None, 0, 0, 0).map_err(|e| Error::Network(e.to_string()))?;
         WinHttpReceiveResponse(req.0, std::ptr::null_mut()).map_err(|e| Error::Network(e.to_string()))?;
+        let mut status = 0u32;
+        let mut len = std::mem::size_of::<u32>() as u32;
+        WinHttpQueryHeaders(req.0, WINHTTP_QUERY_STATUS_CODE | WINHTTP_QUERY_FLAG_NUMBER, PCWSTR::null(), Some((&mut status as *mut u32).cast()), &mut len, std::ptr::null_mut())
+            .map_err(|e| Error::Network(e.to_string()))?;
+        if status != 200 {
+            return Err(Error::Network(format!("HTTP {status}")));
+        }
         let mut out = Vec::new();
         let mut buf = [0u8; 4096];
         loop {
@@ -166,7 +178,7 @@ fn https_get(host: &str, path: &str) -> Result<Vec<u8>, Error> {
                 break;
             }
             out.extend_from_slice(&buf[..n as usize]);
-            if out.len() > MAX {
+            if out.len() > max {
                 return Err(Error::Network("response too large".into()));
             }
         }

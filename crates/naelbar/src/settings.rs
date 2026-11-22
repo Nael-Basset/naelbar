@@ -422,6 +422,17 @@ static ROWS: &[Row] = &[
     Row {
         section: 5,
         only: Only::Any,
+        title: ("Mises à jour automatiques", "Automatic updates"),
+        desc: ("Une fois par jour, installe la dernière version publiée sur GitHub et redémarre l'îlot.", "Once a day, installs the latest version published on GitHub and restarts the island."),
+        ctl: Ctl::Choice(
+            |c| if c.auto_update { "on" } else { "off" },
+            |c, v| c.auto_update = v == "on",
+            &[("off", "Non", "No"), ("on", "Oui", "Yes")],
+        ),
+    },
+    Row {
+        section: 5,
+        only: Only::Any,
         title: ("Fichier de configuration", "Configuration file"),
         desc: ("Tous ces réglages, au format JSON.", "All of these settings, as JSON."),
         ctl: Ctl::OpenConfig,
