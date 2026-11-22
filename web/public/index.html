@@ -7,8 +7,11 @@
 <title>naelbar</title>
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icon.svg" type="image/svg+xml">
-<link rel="apple-touch-icon" href="icon.svg">
-<link rel="stylesheet" href="style.css?v=10">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link rel="stylesheet" href="style.css?v=12">
 </head>
 <body>
 <main id="login" hidden>
@@ -17,6 +20,12 @@
   <button id="btn-login" class="primary">Continuer avec Google</button>
   <p id="login-err" class="err" role="alert"></p>
 </main>
+
+<div id="install" class="install" role="dialog" aria-label="Installer l'appli" hidden>
+  <p id="install-text">Installe naelbar comme une appli : plein écran, sans barre du navigateur.</p>
+  <button id="btn-install" class="primary">Installer</button>
+  <button id="btn-install-no" class="icon" aria-label="Plus tard">×</button>
+</div>
 
 <div id="app" hidden>
   <!-- Agenda -->
@@ -86,6 +95,6 @@
 <div id="sheet-bg" class="sheet-bg" hidden></div>
 <div id="sheet" class="sheet" role="dialog" aria-modal="true" hidden></div>
 
-<script type="module" src="app.js?v=10"></script>
+<script type="module" src="app.js?v=12"></script>
 </body>
 </html>

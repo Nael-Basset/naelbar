@@ -1,8 +1,8 @@
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js';
 import { getAuth, GoogleAuthProvider, signInWithPopup, signInWithRedirect, getRedirectResult, onAuthStateChanged, signOut, setPersistence, browserLocalPersistence } from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js';
 import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, collection, doc, setDoc, getDoc, getDocs, onSnapshot, writeBatch } from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js';
-import { startPc } from './pc.js?v=10';
-import { startMusic } from './music.js?v=10';
+import { startPc } from './pc.js?v=12';
+import { startMusic } from './music.js?v=12';
 
 const app = initializeApp({
   apiKey: 'AIzaSyBvW_D77a2k3moCWtZMEREDh9dFdGXG0mM',
@@ -451,3 +451,44 @@ window.naelbarSync = {
 };
 
 if ('serviceWorker' in navigator && !DESKTOP_APP && !PC_MODE) navigator.serviceWorker.register('sw.js').catch(() => {});
+
+// Dans un navigateur : plein écran au premier toucher (et de nouveau si on en
+// sort), et proposition d'installer le site comme appli.
+if (!DESKTOP_APP && !PC_MODE) {
+  const installed = () => ['fullscreen', 'standalone'].some(m => matchMedia(`(display-mode: ${m})`).matches) || navigator.standalone === true;
+  const root = document.documentElement;
+  // Le plein écran consomme le geste : pas sur ce qui en a besoin
+  // (connexion Google, installation, choix de fichiers).
+  const SKIP = '#btn-login, #install, input, label, select, textarea';
+  addEventListener('pointerup', e => {
+    if (installed() || document.fullscreenElement || !root.requestFullscreen || e.target.closest?.(SKIP)) return;
+    root.requestFullscreen({ navigationUI: 'hide' }).catch(() => {});
+  }, { capture: true, passive: true });
+
+  const box = $('install');
+  const later = () => { try { return Number(localStorage.getItem('nb.install-later')) > Date.now(); } catch (_) { return false; } };
+  let ask = null;
+  addEventListener('beforeinstallprompt', e => {
+    e.preventDefault();
+    ask = e;
+    if (!later()) box.hidden = false;
+  });
+  addEventListener('appinstalled', () => { ask = null; box.hidden = true; });
+  $('btn-install').onclick = async () => {
+    if (!ask) return;
+    box.hidden = true;
+    ask.prompt();
+    await ask.userChoice.catch(() => {});
+    ask = null;
+  };
+  $('btn-install-no').onclick = () => {
+    box.hidden = true;
+    try { localStorage.setItem('nb.install-later', String(Date.now() + 7 * 864e5)); } catch (_) {}
+  };
+  // iPhone : pas d'invite automatique, on explique le geste.
+  if (/iPhone|iPad|iPod/.test(navigator.userAgent) && !installed() && !later()) {
+    $('install-text').textContent = "Pour l'avoir en plein écran comme une appli : Partager, puis « Sur l'écran d'accueil ».";
+    $('btn-install').hidden = true;
+    box.hidden = false;
+  }
+}

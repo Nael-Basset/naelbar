@@ -1,0 +1,2342 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <meta name="theme-color" content="#0d0d10" media="(prefers-color-scheme: dark)">
+  <meta name="theme-color" content="#f2f2f5" media="(prefers-color-scheme: light)">
+  <title>YouTube Music Remote</title>
+  <style>
+    /* Télécommande. Direction : posée, tactile, à portée de pouce. Un salon le soir, une chaîne
+       hi-fi : commandes sobres, la pochette seule source de couleur, le voyant de l'appareil piloté
+       comme signature. Grille de 4 px ; tailles 11 / 13 / 17 / 22 ; graisses 400 à 600.
+       Mise en page : le lecteur tient sur un écran ; barre d'outils translucide en bas ; paroles et
+       file d'attente dans des panneaux qu'on tire du bas. */
+    :root {
+      color-scheme: dark;
+      --fg-rgb: 245 245 247;
+      --bg-rgb: 13 13 16;
+      --shade-rgb: 0 0 0;
+      --bg: rgb(var(--bg-rgb));
+      --surface: #1b1b20;
+      --text: rgb(var(--fg-rgb));
+      --text-dim: rgb(var(--fg-rgb) / 0.62);
+      --text-muted: rgb(var(--fg-rgb) / 0.38);
+      --track: rgb(var(--fg-rgb) / 0.16);
+      --fill: rgb(var(--fg-rgb) / 0.86);
+      --border: rgb(var(--fg-rgb) / 0.08);
+      --card-hover: rgb(var(--fg-rgb) / 0.08);
+      --accent: #ff2d6a;
+      --accent-soft: rgba(255, 45, 106, 0.14);
+      --ok: #30d158;
+      --wait: #d9a441;
+      --bad: #e5544b;
+      --material: rgba(30, 30, 36, 0.66);
+      --material-edge: rgba(255, 255, 255, 0.08);
+      --scrim: rgba(0, 0, 0, 0.5);
+      --cover-shadow: 0 16px 44px rgba(0, 0, 0, 0.55);
+      --ambient-opacity: 0.35;
+      --ease: cubic-bezier(0.2, 0, 0, 1);
+    }
+    @media (prefers-color-scheme: light) {
+      :root {
+        color-scheme: light;
+        --fg-rgb: 18 18 22;
+        --bg-rgb: 242 242 245;
+        --shade-rgb: 255 255 255;
+        --surface: #ffffff;
+        --text-dim: rgb(var(--fg-rgb) / 0.62);
+        --text-muted: rgb(var(--fg-rgb) / 0.4);
+        --track: rgb(var(--fg-rgb) / 0.14);
+        --fill: rgb(var(--fg-rgb) / 0.78);
+        --border: rgb(var(--fg-rgb) / 0.08);
+        --accent: #d6004a;
+        --accent-soft: rgba(214, 0, 74, 0.1);
+        --ok: #1f9d50;
+        --wait: #a8741a;
+        --bad: #c4372e;
+        --material: rgba(246, 246, 249, 0.72);
+        --material-edge: rgba(255, 255, 255, 0.7);
+        --scrim: rgba(0, 0, 0, 0.28);
+        --cover-shadow: 0 16px 40px rgba(20, 20, 30, 0.22);
+        --ambient-opacity: 0.3;
+      }
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; user-select: none; }
+    html, body { height: 100%; }
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font: 100%/1.4 system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      overflow: hidden;
+    }
+    button { font: inherit; color: inherit; background: none; border: 0; cursor: pointer; }
+    button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 12px; }
+    svg { display: block; fill: currentColor; }
+
+    /* Fond : la pochette très floutée teinte la pièce sans distraire */
+    .ambient-bg {
+      position: fixed;
+      inset: -20%;
+      background-size: cover;
+      background-position: center;
+      filter: blur(60px) saturate(1.4);
+      opacity: var(--ambient-opacity);
+      z-index: 0;
+      pointer-events: none;
+      transition: background-image 0.5s var(--ease);
+    }
+    .ambient-overlay { display: none; }
+
+    /* Lecteur : une colonne qui tient sur un écran */
+    .player {
+      position: relative;
+      z-index: 1;
+      height: 100%;
+      max-width: 480px;
+      margin: 0 auto;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      padding: calc(env(safe-area-inset-top, 0px) + 8px) max(20px, env(safe-area-inset-right, 0px)) calc(env(safe-area-inset-bottom, 0px) + 84px) max(20px, env(safe-area-inset-left, 0px));
+    }
+
+    /* En-tête : l'appareil piloté et son voyant (signature), outil caméra à droite */
+    .top { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 44px; }
+    .device { display: flex; align-items: center; gap: 8px; min-width: 0; font-size: 0.8125rem; font-weight: 500; color: var(--text-dim); }
+    .device span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .status-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--wait); flex: none; transition: background-color 0.3s var(--ease); }
+    .status-dot.connected { background: var(--ok); }
+    .status-dot.disconnected { background: var(--bad); }
+
+    .btn-icon, .btn-hand {
+      width: 44px;
+      height: 44px;
+      border-radius: 22px;
+      display: grid;
+      place-items: center;
+      color: var(--text-dim);
+      flex: none;
+      transition: color 0.15s var(--ease), background-color 0.15s var(--ease);
+    }
+    .btn-icon svg, .btn-hand svg { width: 24px; height: 24px; }
+    .btn-icon:active, .btn-hand:active { background: var(--track); }
+    .btn-icon.active { color: var(--accent); }
+    .btn-hand.loading { color: var(--text); animation: hand-wait 1.2s ease-in-out infinite; }
+    .btn-hand.tracking { color: var(--accent); background: var(--accent-soft); }
+    .btn-hand.idle { color: var(--accent); }
+    .btn-hand.error { color: var(--bad); }
+    @keyframes hand-wait { 50% { opacity: 0.45; } }
+
+    /* Pochette : entière sur un fond flouté d'elle-même ; glisser verticalement règle le volume */
+    /* La pochette prend la place qui reste, pas une part de l'écran : la page
+       peut être intégrée dans un cadre plus petit (onglet Musique de naelbar). */
+    .cover-area { flex: 1; min-height: 0; display: grid; place-items: center; container-type: size; }
+    .cover-wrap {
+      position: relative;
+      width: min(100%, 46vh, 340px);
+      width: min(100cqw, 100cqh, 340px);
+      aspect-ratio: 1;
+      border-radius: 16px;
+      overflow: hidden;
+      background: var(--surface);
+      box-shadow: var(--cover-shadow);
+      touch-action: none;
+    }
+    .cover-wrap::before {
+      content: "";
+      position: absolute;
+      inset: -16px;
+      background: var(--art, none) center / cover no-repeat;
+      filter: blur(18px) brightness(0.7);
+    }
+    .cover-img { position: relative; width: 100%; height: 100%; object-fit: contain; pointer-events: none; -webkit-user-drag: none; }
+    .cover-img:not([src]), .cover-img[src=""] { visibility: hidden; }
+    .cover-volume {
+      position: absolute;
+      inset: auto 12px 12px 12px;
+      height: 4px;
+      border-radius: 2px;
+      background: rgba(0, 0, 0, 0.45);
+      overflow: hidden;
+      opacity: 0;
+      transition: opacity 0.2s var(--ease);
+      pointer-events: none;
+    }
+    .cover-volume.visible { opacity: 1; }
+    .cover-volume-fill { height: 100%; width: 0; background: #fff; }
+
+    /* Titre et avis */
+    .meta { display: flex; align-items: center; gap: 4px; }
+    .meta-text { flex: 1; min-width: 0; }
+    .title { font-size: 1.375rem; font-weight: 600; line-height: 1.2; letter-spacing: -0.01em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .artist { font-size: 1.0625rem; color: var(--text-dim); line-height: 1.3; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+    /* Curseurs : piste fine au repos, épaisse sous le doigt ; remplissage piloté par --p */
+    .range {
+      -webkit-appearance: none;
+      appearance: none;
+      width: 100%;
+      height: 32px;
+      background: transparent;
+      cursor: pointer;
+      touch-action: none;
+      --p: 0%;
+      --h: 4px;
+    }
+    .range.is-active { --h: 12px; }
+    .range::-webkit-slider-runnable-track {
+      height: var(--h);
+      border-radius: calc(var(--h) / 2);
+      background: linear-gradient(to right, var(--fill) var(--p), var(--track) var(--p));
+      transition: height 0.16s var(--ease);
+    }
+    .range::-webkit-slider-thumb { -webkit-appearance: none; width: 1px; height: var(--h); opacity: 0; }
+    .range::-moz-range-track { height: var(--h); border-radius: calc(var(--h) / 2); background: var(--track); }
+    .range::-moz-range-progress { height: var(--h); border-radius: calc(var(--h) / 2); background: var(--fill); }
+    .range::-moz-range-thumb { width: 1px; height: var(--h); border: 0; opacity: 0; }
+    .times { display: flex; justify-content: space-between; margin-top: -4px; font-size: 0.8125rem; color: var(--text-muted); font-variant-numeric: tabular-nums; }
+
+    /* Transport : gros glyphes, sans halo, retour immédiat à l'appui */
+    .transport { display: flex; align-items: center; justify-content: space-evenly; }
+    .btn-nav, .btn-play {
+      width: 72px;
+      height: 72px;
+      border-radius: 36px;
+      display: grid;
+      place-items: center;
+      transition: transform 0.1s var(--ease), background-color 0.1s var(--ease);
+    }
+    .btn-nav:active, .btn-play:active { transform: scale(0.9); background: var(--track); }
+    .btn-nav svg { width: 36px; height: 36px; }
+    .btn-play svg { width: 52px; height: 52px; }
+
+    /* Volume : bornes explicites */
+    .volume-box { display: flex; align-items: center; gap: 12px; color: var(--text-muted); }
+    .volume-box svg { width: 18px; height: 18px; flex: none; }
+
+    /* Barre d'outils translucide : la seule couche de verre de l'écran */
+    .toolbar {
+      position: fixed;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      z-index: 5;
+      display: flex;
+      justify-content: space-around;
+      padding: 8px max(12px, env(safe-area-inset-right, 0px)) calc(env(safe-area-inset-bottom, 0px) + 8px) max(12px, env(safe-area-inset-left, 0px));
+      background: var(--material);
+      backdrop-filter: blur(24px) saturate(180%);
+      -webkit-backdrop-filter: blur(24px) saturate(180%);
+      border-top: 1px solid var(--material-edge);
+    }
+    .tool {
+      min-width: 64px;
+      height: 56px;
+      display: grid;
+      justify-items: center;
+      align-content: center;
+      gap: 4px;
+      border-radius: 12px;
+      color: var(--text-dim);
+      font-size: 0.6875rem;
+      font-weight: 500;
+      transition: color 0.15s var(--ease), background-color 0.15s var(--ease);
+    }
+    .tool svg { width: 24px; height: 24px; }
+    .tool.active { color: var(--accent); }
+    .tool:active { background: var(--track); }
+
+    /* Panneaux tirables (paroles, file d'attente) */
+    .sheet-scrim { position: fixed; inset: 0; z-index: 6; background: var(--scrim); opacity: 0; pointer-events: none; }
+    .sheet {
+      position: fixed;
+      left: 0;
+      right: 0;
+      top: 0;
+      height: 100%;
+      z-index: 7;
+      display: flex;
+      flex-direction: column;
+      background: var(--surface);
+      border-radius: 16px 16px 0 0;
+      box-shadow: 0 -8px 40px rgba(0, 0, 0, 0.25);
+      transform: translateY(110%);
+      will-change: transform;
+    }
+    .sheet-head { flex: none; padding: 8px max(20px, env(safe-area-inset-right, 0px)) 12px max(20px, env(safe-area-inset-left, 0px)); touch-action: none; cursor: grab; }
+    .grabber { width: 36px; height: 4px; border-radius: 2px; background: var(--text-muted); margin: 0 auto 12px; }
+    .sheet-title { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 44px; }
+    .sheet-title h2 { font-size: 1.0625rem; font-weight: 600; }
+    .sheet-actions { display: flex; align-items: center; gap: 4px; }
+    .sheet-body {
+      flex: 1;
+      min-height: 0;
+      overflow-y: auto;
+      overflow-x: hidden;
+      overscroll-behavior: contain;
+      padding: 0 max(12px, env(safe-area-inset-right, 0px)) calc(env(safe-area-inset-bottom, 0px) + 24px) max(12px, env(safe-area-inset-left, 0px));
+    }
+    .queue-count { font-size: 0.8125rem; color: var(--text-muted); font-variant-numeric: tabular-nums; }
+    .queue-count::after { content: " titres"; }
+
+    /* Paroles */
+    .lyrics-scroll { scroll-behavior: smooth; }
+    .lyrics-status { font-size: 0.8125rem; color: var(--text-dim); text-align: center; padding: 24px 12px; line-height: 1.5; }
+    .lyrics-list { display: flex; flex-direction: column; gap: 4px; padding: 4px 0 24px; min-width: 0; }
+    .lyric-line {
+      font-size: 1.375rem;
+      font-weight: 600;
+      line-height: 1.35;
+      padding: 8px 8px;
+      border-radius: 12px;
+      cursor: pointer;
+      opacity: 0.4;
+      min-width: 0;           /* les lignes longues passent à la ligne dans la largeur du panneau */
+      overflow-wrap: anywhere;
+      transition: opacity 0.3s var(--ease), background-color 0.25s var(--ease);
+    }
+    .lyric-line:active { background: var(--card-hover); }
+    .lyric-line.active { opacity: 1; }
+    .lyric-line.past-line { opacity: 0.55; }
+    .lyric-line.past-line .lyric-word { color: rgb(var(--fg-rgb) / 0.72); -webkit-text-fill-color: rgb(var(--fg-rgb) / 0.72); }
+    /* Mot par mot : le mot chanté se remplit de gauche à droite (--prog), sans halo */
+    .lyric-word { display: inline-block; white-space: pre; color: rgb(var(--fg-rgb) / 0.3); -webkit-text-fill-color: rgb(var(--fg-rgb) / 0.3); transition: color 0.12s var(--ease); }
+    .lyric-word.future { color: rgb(var(--fg-rgb) / 0.3); -webkit-text-fill-color: rgb(var(--fg-rgb) / 0.3); }
+    .lyric-word.singing {
+      background: linear-gradient(90deg, rgb(var(--fg-rgb)) var(--prog, 0%), rgb(var(--fg-rgb) / 0.3) var(--prog, 0%));
+      -webkit-background-clip: text;
+      background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+    .lyric-word.past { background: none; color: rgb(var(--fg-rgb)); -webkit-text-fill-color: rgb(var(--fg-rgb)); }
+    /* « Plein écran » : le panneau occupe tout l'écran, texte plus grand, mini transport en bas */
+    .sheet.is-fullscreen { transform: none !important; border-radius: 0; z-index: 9; }
+    .sheet.is-fullscreen .lyric-line { font-size: 1.75rem; padding: 8px 12px; }
+    .lyrics-fullscreen-controls { display: none; }
+    .sheet.is-fullscreen .lyrics-fullscreen-controls {
+      display: flex;
+      flex: none;
+      align-items: center;
+      justify-content: center;
+      gap: 28px;
+      padding: 8px 0 calc(env(safe-area-inset-bottom, 0px) + 12px);
+      border-top: 1px solid var(--border);
+    }
+    .btn-fs-nav, .btn-fs-play { width: 56px; height: 56px; border-radius: 28px; display: grid; place-items: center; }
+    .btn-fs-nav svg { width: 28px; height: 28px; }
+    .btn-fs-play svg { width: 36px; height: 36px; }
+    .btn-fs-nav:active, .btn-fs-play:active { background: var(--track); }
+
+    /* Recherche */
+    .search-panel { display: flex; flex-direction: column; gap: 8px; padding-bottom: 12px; }
+    .search-input-wrap { display: flex; align-items: center; gap: 8px; height: 40px; padding: 0 12px; border-radius: 10px; background: var(--track); transition: box-shadow 0.15s var(--ease); }
+    .search-input-wrap:focus-within { box-shadow: inset 0 0 0 1px var(--accent); }
+    .search-icon { width: 18px; height: 18px; flex: none; color: var(--text-muted); }
+    .search-input { flex: 1; min-width: 0; background: transparent; border: 0; outline: 0; color: var(--text); font: 400 1.0625rem/1.2 inherit; user-select: text; }
+    .search-input::placeholder { color: var(--text-muted); }
+    .search-clear-btn { width: 24px; height: 24px; border-radius: 12px; display: grid; place-items: center; background: var(--track); color: var(--text-dim); font-size: 0.6875rem; }
+    .search-status { font-size: 0.8125rem; color: var(--text-dim); text-align: center; padding: 8px; }
+    .search-results-list { display: flex; flex-direction: column; gap: 4px; }
+    .search-item { display: flex; align-items: center; gap: 12px; padding: 8px; border-radius: 10px; transition: background-color 0.15s var(--ease); }
+    .search-item:active { background: var(--card-hover); }
+    .search-thumb { width: 44px; height: 44px; border-radius: 6px; object-fit: cover; flex: none; background: var(--track); }
+    .search-info { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+    .search-title { font-size: 1.0625rem; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .search-artist { font-size: 0.8125rem; color: var(--text-dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .search-actions { display: flex; align-items: center; gap: 4px; flex: none; }
+    .btn-search-act { width: 44px; height: 44px; border-radius: 22px; display: grid; place-items: center; color: var(--text-dim); transition: color 0.15s var(--ease), background-color 0.15s var(--ease); }
+    .btn-search-act:active { background: var(--track); }
+    .btn-search-act.added { color: var(--ok); }
+
+    /* File d'attente */
+    .queue-list { display: flex; flex-direction: column; gap: 4px; }
+    .queue-item { display: flex; align-items: center; gap: 12px; min-height: 60px; padding: 8px; border-radius: 10px; cursor: pointer; transition: background-color 0.15s var(--ease); }
+    .queue-item:active { background: var(--card-hover); }
+    .queue-thumb { width: 44px; height: 44px; border-radius: 6px; object-fit: cover; flex: none; background: var(--track); }
+    .queue-info { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+    .queue-title { font-size: 1.0625rem; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .queue-item.current .queue-title { color: var(--accent); font-weight: 500; }
+    .queue-artist { font-size: 0.8125rem; color: var(--text-dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .queue-duration { font-size: 0.8125rem; color: var(--text-muted); font-variant-numeric: tabular-nums; flex: none; }
+
+    /* Curseur piloté à la main */
+    .air-cursor {
+      position: fixed;
+      left: -16px;
+      top: -16px;
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      border: 3px solid #fff;
+      background: rgba(255, 255, 255, 0.2);
+      box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.35), 0 4px 12px rgba(0, 0, 0, 0.4);
+      pointer-events: none;
+      z-index: 1000;
+      transition: width 0.1s var(--ease), height 0.1s var(--ease), left 0.1s var(--ease), top 0.1s var(--ease), background-color 0.1s var(--ease);
+    }
+    .air-cursor.pressed { left: -12px; top: -12px; width: 24px; height: 24px; background: var(--accent); }
+    .air-hover { outline: 2px solid var(--accent); outline-offset: 2px; }
+    .air-pressed { transform: scale(0.94); }
+    /* Aperçu caméra, uniquement avec ?debug */
+    .hand-debug { position: fixed; left: 8px; bottom: 96px; width: 200px; height: 152px; border-radius: 8px; border: 1px solid var(--border); z-index: 50; transform: scaleX(-1); }
+    .logs-card { margin: 12px 8px 0; }
+
+    @media (prefers-reduced-motion: reduce) {
+      .range::-webkit-slider-runnable-track, .btn-nav, .btn-play, .lyric-line { transition: none; }
+      .btn-hand.loading { animation: none; }
+    }
+    @media (prefers-reduced-transparency: reduce) {
+      .toolbar { background: var(--surface); backdrop-filter: none; -webkit-backdrop-filter: none; }
+      .ambient-bg { display: none; }
+    }
+  </style>
+  <script src="peerjs.min.js"></script>
+</head>
+<body>
+  <div class="ambient-bg" id="bg"></div>
+  <div class="ambient-overlay"></div>
+
+  <main class="player">
+    <header class="top">
+      <div class="device"><div class="status-dot" id="conn-dot"></div><span id="conn-text">Connexion à votre PC…</span></div>
+      <button class="btn-hand" id="hand-btn" title="Curseur à la main (caméra) : paume pour viser, pincement pour cliquer" aria-label="Curseur à la main">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 7a1.5 1.5 0 0 0-3 0v4.5h-.5V3.5a1.5 1.5 0 0 0-3 0v8h-.5V2.5a1.5 1.5 0 0 0-3 0v9H10.5V5a1.5 1.5 0 0 0-3 0v10.2l-2.4-2.3a1.6 1.6 0 0 0-2.3 2.2l4.6 5.4A5 5 0 0 0 11.2 22H16a5 5 0 0 0 5-5z"/></svg>
+      </button>
+    </header>
+
+    <div class="cover-area">
+      <div class="cover-wrap" id="cover-wrap">
+        <img id="cover" class="cover-img" src="" alt="Pochette" draggable="false">
+        <div class="cover-volume" id="cover-volume"><div class="cover-volume-fill" id="cover-volume-fill"></div></div>
+      </div>
+    </div>
+
+    <section class="meta">
+      <div class="meta-text">
+        <div class="title" id="title">En attente de connexion…</div>
+        <div class="artist" id="artist">Scannez le QR Code sur YouTube Music</div>
+      </div>
+      <button class="btn-icon" id="dislike" title="Je n'aime pas" aria-label="Je n'aime pas">
+        <svg viewBox="0 0 24 24"><path d="M15 3H6a2 2 0 0 0-1.8 1.2l-3 7a2 2 0 0 0-.2.8v2a2 2 0 0 0 2 2h6.3l-1 4.6V21a1.5 1.5 0 0 0 .5 1l1 1 6.6-6.6A2 2 0 0 0 17 15V5a2 2 0 0 0-2-2zm4 0h4v12h-4z"/></svg>
+      </button>
+      <button class="btn-icon" id="like" title="J'aime" aria-label="J'aime">
+        <svg viewBox="0 0 24 24"><path d="M9 21h9a2 2 0 0 0 1.8-1.2l3-7a2 2 0 0 0 .2-.8v-2a2 2 0 0 0-2-2h-6.3l1-4.6V3a1.5 1.5 0 0 0-.5-1L14.2 1 7.6 7.6A2 2 0 0 0 7 9v10a2 2 0 0 0 2 2zM1 9h4v12H1z"/></svg>
+      </button>
+    </section>
+
+    <section>
+      <input type="range" class="range" id="seek" min="0" max="1000" value="0" aria-label="Position">
+      <div class="times"><span id="cur-time">0:00</span><span id="dur-time">0:00</span></div>
+    </section>
+
+    <section class="transport">
+      <button class="btn-nav" id="prev" title="Précédent" aria-label="Précédent">
+        <svg viewBox="0 0 24 24"><path d="M6 6h2v12H6zm3.5 6 8.5 6V6z"/></svg>
+      </button>
+      <button class="btn-play" id="play" title="Lecture / Pause" aria-label="Lecture / Pause">
+        <svg id="play-icon" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+      </button>
+      <button class="btn-nav" id="next" title="Suivant" aria-label="Suivant">
+        <svg viewBox="0 0 24 24"><path d="m6 18 8.5-6L6 6zM16 6h2v12h-2z"/></svg>
+      </button>
+    </section>
+
+    <section class="volume-box">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 9v6h4l5 5V4L7 9z"/></svg>
+      <input type="range" class="range" id="volume" min="0" max="100" value="100" aria-label="Volume">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 9v6h4l5 5V4L7 9zm13.5 3A4.5 4.5 0 0 0 14 8v8a4.5 4.5 0 0 0 2.5-4zM14 3.2v2.1a7 7 0 0 1 0 13.4v2.1a9 9 0 0 0 0-17.6z"/></svg>
+    </section>
+  </main>
+
+  <nav class="toolbar" aria-label="Outils">
+    <button class="tool btn-tgl" id="lyrics-btn" title="Paroles">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h11v2H4zm0 4h11v2H4zm0 4h7v2H4zm13-8h3v9.5a3 3 0 1 1-2-2.8V5z"/></svg>Paroles
+    </button>
+    <button class="tool btn-tgl" id="shuffle" title="Lecture aléatoire">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10.6 9.2 5.4 4 4 5.4l5.2 5.2zM14.5 4l2 2L4 18.6 5.4 20 18 7.5l2 2V4zm.3 9.4-1.4 1.4 3.1 3.1-2 2.1H20v-5.5l-2 2z"/></svg>Aléatoire
+    </button>
+    <button class="tool btn-tgl" id="repeat" title="Répéter">
+      <svg id="repeat-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 7h10v3l4-4-4-4v3H5v6h2V7zm10 10H7v-3l-4 4 4 4v-3h12v-6h-2v4z"/></svg>Répéter
+    </button>
+    <button class="tool" id="queue-btn" title="À suivre">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h12v2H3zm0 5h12v2H3zm0 5h8v2H3zm14-3v6l5-3z"/></svg>À suivre
+    </button>
+  </nav>
+
+  <div class="sheet-scrim" id="sheet-scrim"></div>
+
+  <!-- Panneau Paroles -->
+  <section class="sheet lyrics-section" id="lyrics-box" aria-label="Paroles">
+    <div class="sheet-head">
+      <div class="grabber"></div>
+      <div class="sheet-title">
+        <h2>Paroles</h2>
+        <div class="sheet-actions">
+          <button class="btn-icon" id="btn-lyrics-fullscreen" title="Plein écran" aria-label="Plein écran">
+            <svg id="fullscreen-icon" viewBox="0 0 24 24"><path d="M7 14H5v5h5v-2H7v-3zm-2-4h2V7h3V5H5v5zm12 7h-3v2h5v-5h-2v3zM14 5v2h3v3h2V5h-5z"/></svg>
+          </button>
+        </div>
+      </div>
+    </div>
+    <div class="sheet-body lyrics-scroll" id="lyrics-scroll">
+      <div class="lyrics-status" id="lyrics-status">Chargement des paroles…</div>
+      <div class="lyrics-list" id="lyrics-list"></div>
+    </div>
+    <div class="lyrics-fullscreen-controls" id="lyrics-fs-controls">
+      <button class="btn-fs-nav" id="fs-prev" title="Précédent" aria-label="Précédent">
+        <svg viewBox="0 0 24 24"><path d="M6 6h2v12H6zm3.5 6 8.5 6V6z"/></svg>
+      </button>
+      <button class="btn-fs-play" id="fs-play" title="Lecture / Pause" aria-label="Lecture / Pause">
+        <svg id="fs-play-icon" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+      </button>
+      <button class="btn-fs-nav" id="fs-next" title="Suivant" aria-label="Suivant">
+        <svg viewBox="0 0 24 24"><path d="m6 18 8.5-6L6 6zM16 6h2v12h-2z"/></svg>
+      </button>
+    </div>
+  </section>
+
+  <!-- Panneau À suivre et recherche -->
+  <section class="sheet queue-section" id="queue-box" aria-label="À suivre">
+    <div class="sheet-head">
+      <div class="grabber"></div>
+      <div class="sheet-title">
+        <h2>À suivre</h2>
+        <div class="sheet-actions">
+          <span class="queue-count" id="queue-count">0</span>
+          <button class="btn-icon" id="btn-search-toggle" title="Rechercher sur YouTube Music" aria-label="Rechercher">
+            <svg viewBox="0 0 24 24"><path d="M15.5 14h-.8l-.3-.3A6.5 6.5 0 1 0 14 15.5l.3.3v.8l5 5 1.5-1.5zm-6 0a4.5 4.5 0 1 1 0-9 4.5 4.5 0 0 1 0 9z"/></svg>
+          </button>
+        </div>
+      </div>
+    </div>
+    <div class="sheet-body">
+      <div class="search-panel" id="search-panel" style="display: none;">
+        <div class="search-input-wrap">
+          <svg viewBox="0 0 24 24" class="search-icon"><path d="M15.5 14h-.8l-.3-.3A6.5 6.5 0 1 0 14 15.5l.3.3v.8l5 5 1.5-1.5zm-6 0a4.5 4.5 0 1 1 0-9 4.5 4.5 0 0 1 0 9z"/></svg>
+          <input type="text" class="search-input" id="search-input" placeholder="Rechercher" autocomplete="off" autocapitalize="off" spellcheck="false">
+          <button class="search-clear-btn" id="search-clear" style="display: none;" title="Effacer" aria-label="Effacer">
+            <svg viewBox="0 0 24 24" width="12" height="12"><path d="M19 6.4 17.6 5 12 10.6 6.4 5 5 6.4 10.6 12 5 17.6 6.4 19 12 13.4 17.6 19 19 17.6 13.4 12z"/></svg>
+          </button>
+        </div>
+        <div class="search-status" id="search-status" style="display: none;"></div>
+        <div class="search-results-list" id="search-results-list"></div>
+      </div>
+
+      <div class="queue-list" id="queue-list">
+        <div style="font-size: 0.8125rem; color: var(--text-dim); text-align: center; padding: 12px;">File d'attente vide</div>
+      </div>
+
+      <!-- Diagnostic (visible avec ?debug) -->
+      <div class="logs-card" id="logs-card" hidden style="background: rgb(var(--shade-rgb) / 0.5); border: 1px solid var(--border); border-radius: 12px; padding: 8px 12px; font-family: monospace;">
+        <div style="display: flex; justify-content: space-between; align-items: center; cursor: pointer;" id="logs-toggle">
+          <span style="font-size: 0.6875rem; font-weight: 500; color: var(--text-dim); display: flex; align-items: center; gap: 8px;">
+            Diagnostic
+            <span id="logs-badge" style="font-size: 0.6875rem; color: var(--text-muted);">0</span>
+          </span>
+          <div style="display: flex; gap: 8px; align-items: center;">
+            <button id="btn-copy-logs" style="background: var(--track); color: var(--text); font-size: 0.6875rem; padding: 4px 8px; border-radius: 6px;">Copier</button>
+            <button id="btn-clear-logs" style="background: var(--track); color: var(--text); font-size: 0.6875rem; padding: 4px 8px; border-radius: 6px;">Effacer</button>
+            <span id="logs-arrow" style="font-size: 0.6875rem; color: var(--text-dim); transition: transform 0.2s;">▼</span>
+          </div>
+        </div>
+        <div id="logs-body" style="display: none; margin-top: 8px; max-height: 252px; overflow-y: auto; font-size: 0.6875rem; line-height: 1.5; color: var(--text-dim); border-top: 1px solid var(--border); padding-top: 8px;">
+          <div id="logs-list" style="display: flex; flex-direction: column; gap: 4px;">
+            <div style="color: var(--text-muted);">Initialisation des journaux…</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <script>
+    // Les messages transitent en texte JSON brut sur le RTCDataChannel natif (le canal JSON de PeerJS
+    // refuse tout message > 16 Ko). PeerJS écoute le même canal et appelle TextDecoder.decode() sur
+    // ces chaînes : ce patch lui évite de lever une exception à chaque message.
+    if (typeof TextDecoder !== 'undefined') {
+      const origDecode = TextDecoder.prototype.decode;
+      TextDecoder.prototype.decode = function (input, options) {
+        if (typeof input === 'string') return input;
+        if (!input) return '';
+        return origDecode.call(this, input, options);
+      };
+    }
+
+    let isUserSeeking = false;
+    let isUserVolume = false;
+
+    function vibrate() {
+      if ('vibrate' in navigator) navigator.vibrate(15);
+    }
+
+    // URL https normalisée (guillemets percent-encodés) : sûre dans src= et dans url("…") CSS
+    function safeHttpsUrl(u) {
+      try {
+        const url = new URL(String(u || ''));
+        return url.protocol === 'https:' ? url.href.replace(/"/g, '%22') : '';
+      } catch (e) {
+        return '';
+      }
+    }
+
+    function formatTime(s) {
+      if (!s || isNaN(s)) return '0:00';
+      const m = Math.floor(s / 60);
+      const sec = Math.floor(s % 60);
+      return m + ':' + (sec < 10 ? '0' : '') + sec;
+    }
+
+    const PLAY_SVG = '<path d="M8 5v14l11-7z"/>';
+    const PAUSE_SVG = '<path d="M6 5h4v14H6zM14 5h4v14h-4z"/>';
+    const REPEAT_OFF_SVG = '<path d="M7 7h10v3l4-4-4-4v3H5v6h2V7zm10 10H7v-3l-4 4 4 4v-3h12v-6h-2v4z"/>';
+    const REPEAT_ALL_SVG = '<path d="M7 7h10v3l4-4-4-4v3H5v6h2V7zm10 10H7v-3l-4 4 4 4v-3h12v-6h-2v4z"/><circle cx="12" cy="12" r="2.2" fill="currentColor"/>';
+    const REPEAT_ONE_SVG = '<path d="M7 7h10v3l4-4-4-4v3H5v6h2V7zm10 10H7v-3l-4 4 4 4v-3h12v-6h-2v4z"/><text x="12" y="15" text-anchor="middle" font-size="8.5" font-weight="900" font-family="sans-serif" fill="currentColor">1</text>';
+
+    const el = {
+      connDot: document.getElementById('conn-dot'),
+      connText: document.getElementById('conn-text'),
+      bg: document.getElementById('bg'),
+      cover: document.getElementById('cover'),
+      coverWrap: document.getElementById('cover-wrap'),
+      title: document.getElementById('title'),
+      artist: document.getElementById('artist'),
+      seek: document.getElementById('seek'),
+      curTime: document.getElementById('cur-time'),
+      durTime: document.getElementById('dur-time'),
+      play: document.getElementById('play'),
+      playIcon: document.getElementById('play-icon'),
+      prev: document.getElementById('prev'),
+      next: document.getElementById('next'),
+      like: document.getElementById('like'),
+      dislike: document.getElementById('dislike'),
+      shuffle: document.getElementById('shuffle'),
+      repeat: document.getElementById('repeat'),
+      repeatIcon: document.getElementById('repeat-icon'),
+      lyricsBtn: document.getElementById('lyrics-btn'),
+      lyricsBox: document.getElementById('lyrics-box'),
+      lyricsScroll: document.getElementById('lyrics-scroll'),
+      lyricsStatus: document.getElementById('lyrics-status'),
+      lyricsList: document.getElementById('lyrics-list'),
+      btnFs: document.getElementById('btn-lyrics-fullscreen'),
+      fsIcon: document.getElementById('fullscreen-icon'),
+      fsPlay: document.getElementById('fs-play'),
+      fsPlayIcon: document.getElementById('fs-play-icon'),
+      fsPrev: document.getElementById('fs-prev'),
+      fsNext: document.getElementById('fs-next'),
+      volume: document.getElementById('volume'),
+      queueBox: document.getElementById('queue-box'),
+      queueList: document.getElementById('queue-list'),
+      queueCount: document.getElementById('queue-count'),
+      btnSearchToggle: document.getElementById('btn-search-toggle'),
+      searchPanel: document.getElementById('search-panel'),
+      searchInput: document.getElementById('search-input'),
+      searchClear: document.getElementById('search-clear'),
+      searchStatus: document.getElementById('search-status'),
+      searchResultsList: document.getElementById('search-results-list')
+    };
+
+    // ==========================================
+    // Communication WebRTC P2P (Plug & Play universel)
+    // ==========================================
+    let peer = null;
+    let dataChannel = null;
+    const rawRoomId = (location.hash ? decodeURIComponent(location.hash.slice(1)) : new URLSearchParams(location.search).get('room') || '').trim();
+    const targetRoomId = /^ytm-[a-z0-9-]{4,64}$/.test(rawRoomId) ? rawRoomId : '';
+
+    // Identifiant secret et persistant de cet appareil : le PC s'en sert pour mémoriser
+    // les appareils déjà autorisés.
+    function getDeviceId() {
+      try {
+        let id = localStorage.getItem('ytmr_device_id');
+        if (!id || !/^[a-f0-9]{32}$/.test(id)) {
+          const bytes = crypto.getRandomValues(new Uint8Array(16));
+          id = Array.from(bytes, b => b.toString(16).padStart(2, '0')).join('');
+          localStorage.setItem('ytmr_device_id', id);
+        }
+        return id;
+      } catch (e) {
+        const bytes = crypto.getRandomValues(new Uint8Array(16));
+        return Array.from(bytes, b => b.toString(16).padStart(2, '0')).join('');
+      }
+    }
+    const deviceId = getDeviceId();
+    function getDeviceName() {
+      const ua = navigator.userAgent || '';
+      if (/iPhone/i.test(ua)) return 'iPhone';
+      if (/iPad/i.test(ua)) return 'iPad';
+      if (/Android/i.test(ua)) return /Mobile/i.test(ua) ? 'Téléphone Android' : 'Tablette Android';
+      if (/Mac OS X/i.test(ua)) return 'Mac';
+      if (/Windows/i.test(ua)) return 'PC Windows';
+      return 'Navigateur';
+    }
+    // 'pending' | 'approved' | 'denied' | 'revoked'
+    let authStatus = 'pending';
+
+    // ==========================================
+    // Système de Logs & Diagnostic en temps réel
+    // ==========================================
+    // Panneau de diagnostic réservé au débogage : ajouter ?debug à l'URL pour l'afficher
+    if (new URLSearchParams(location.search).has('debug')) {
+      document.getElementById('logs-card').hidden = false;
+    }
+    const logsListEl = document.getElementById('logs-list');
+    const logsBadgeEl = document.getElementById('logs-badge');
+    const logsBodyEl = document.getElementById('logs-body');
+    const logsArrowEl = document.getElementById('logs-arrow');
+    const logsToggleEl = document.getElementById('logs-toggle');
+    const btnCopyLogs = document.getElementById('btn-copy-logs');
+    const btnClearLogs = document.getElementById('btn-clear-logs');
+    let logsCount = 0;
+    let isLogsOpen = false;
+    const allLogEntries = [];
+
+    function addLog(tag, msg, color = '#aaa') {
+      const now = new Date();
+      const timeStr = now.toTimeString().split(' ')[0] + '.' + String(now.getMilliseconds()).padStart(3, '0');
+      const entryText = `[${timeStr}] [${tag}] ${msg}`;
+      allLogEntries.push(entryText);
+      if (allLogEntries.length > 250) allLogEntries.shift();
+
+      logsCount++;
+      if (logsBadgeEl) logsBadgeEl.textContent = logsCount;
+
+      if (logsListEl) {
+        if (logsCount === 1) logsListEl.innerHTML = '';
+        const row = document.createElement('div');
+        row.style.cssText = `color: ${color}; word-break: break-all; border-bottom: 1px solid rgba(255,255,255,0.03); padding-bottom: 2px;`;
+        // Le message peut contenir des titres ou des données reçues du réseau : jamais d'innerHTML.
+        const timeEl = document.createElement('span');
+        timeEl.style.opacity = '0.5';
+        timeEl.textContent = `[${timeStr}]`;
+        const tagEl = document.createElement('strong');
+        tagEl.style.color = color;
+        tagEl.textContent = `[${tag}]`;
+        row.append(timeEl, ' ', tagEl, ' ', String(msg));
+        logsListEl.appendChild(row);
+        if (isLogsOpen) {
+          logsBodyEl.scrollTop = logsBodyEl.scrollHeight;
+        }
+      }
+    }
+
+    if (logsToggleEl) {
+      logsToggleEl.addEventListener('click', (e) => {
+        if (e.target.tagName === 'BUTTON') return;
+        isLogsOpen = !isLogsOpen;
+        logsBodyEl.style.display = isLogsOpen ? 'block' : 'none';
+        logsArrowEl.style.transform = isLogsOpen ? 'rotate(180deg)' : 'rotate(0deg)';
+        if (isLogsOpen) logsBodyEl.scrollTop = logsBodyEl.scrollHeight;
+      });
+    }
+
+    if (btnCopyLogs) {
+      btnCopyLogs.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const text = allLogEntries.join('\n');
+        navigator.clipboard.writeText(text).then(() => {
+          const old = btnCopyLogs.textContent;
+          btnCopyLogs.textContent = 'Copié !';
+          setTimeout(() => { btnCopyLogs.textContent = old; }, 1500);
+        }).catch(() => {
+          alert('Impossible de copier automatiquement. Sélectionnez le texte ci-dessous.');
+        });
+      });
+    }
+
+    if (btnClearLogs) {
+      btnClearLogs.addEventListener('click', (e) => {
+        e.stopPropagation();
+        allLogEntries.length = 0;
+        logsCount = 0;
+        if (logsBadgeEl) logsBadgeEl.textContent = '0';
+        if (logsListEl) logsListEl.innerHTML = '<div style="color: #666;">Logs effacés.</div>';
+      });
+    }
+
+    addLog('INIT', 'Démarrage télécommande. Room cible: ' + (targetRoomId || 'AUCUNE (flashez le QR)'), '#fff');
+
+    // Envoi unique en texte JSON sur le RTCDataChannel natif (voir le commentaire du patch TextDecoder)
+    function sendRaw(payload) {
+      const dc = dataChannel && dataChannel.dataChannel;
+      if (!payload || !dc || dc.readyState !== 'open') return false;
+      try {
+        dc.send(JSON.stringify(payload));
+        return true;
+      } catch (e) {
+        return false;
+      }
+    }
+
+    function sendP2PMessage(payload) {
+      if (authStatus !== 'approved') return false;
+      return sendRaw(payload);
+    }
+
+    function sendAction(action, value = null) {
+      vibrate();
+      if (authStatus !== 'approved') {
+        addLog('ERR', 'Action ignorée (' + action + ') : appareil pas encore autorisé par le PC', '#ff3366');
+        return;
+      }
+      const valStr = (value !== null && value !== undefined) ? ' ' + JSON.stringify(value) : '';
+      const msgId = 'act-' + Date.now() + '-' + Math.random().toString(36).slice(2, 7);
+      const payload = { action, value, msgId };
+
+      const sent = sendP2PMessage(payload);
+      if (sent) {
+        addLog('ENVOI', action + valStr, '#00e5ff');
+      } else {
+        addLog('ERR', 'Échec envoi (' + action + '): Canal non ouvert !', '#ff3366');
+      }
+    }
+
+    function initWebRTCClient() {
+      if (!targetRoomId) {
+        el.connDot.className = 'status-dot disconnected';
+        el.connText.textContent = 'Lien incomplet : flashez le QR Code';
+        addLog('ERR', 'Room ID absent de l\'URL (#ytm-...)', '#ff3366');
+        return;
+      }
+
+      el.connDot.className = 'status-dot';
+      el.connText.textContent = 'Connexion à votre PC…';
+      addLog('CONN', 'Initialisation PeerJS client…', '#ffbb00');
+
+      try {
+        peer = new Peer({ debug: 1 });
+
+        peer.on('open', (id) => {
+          addLog('CONN', 'Peer client prêt (id=' + id + '). Connexion à l\'hôte: ' + targetRoomId, '#00e676');
+          connectToPeerHost();
+        });
+
+        peer.on('error', (err) => {
+          console.warn('Peer error:', err);
+          el.connDot.className = 'status-dot disconnected';
+          el.connText.textContent = 'Erreur réseau : reconnexion…';
+          addLog('ERR', 'Erreur PeerJS: ' + (err?.type || err?.message || err), '#ff3366');
+          if (authStatus === 'denied' || authStatus === 'revoked') return;
+          if (peer.disconnected && !peer.destroyed) {
+            addLog('CONN', 'Reconnexion au serveur de signalisation…', '#ffbb00');
+            peer.reconnect();
+          } else if (peer.destroyed) {
+            initWebRTCClient();
+          } else {
+            setTimeout(connectToPeerHost, 3000);
+          }
+        });
+
+        peer.on('disconnected', () => {
+          addLog('CONN', 'Peer déconnecté du serveur de signalisation. Reconnexion…', '#ffbb00');
+          if (!peer.destroyed) {
+            peer.reconnect();
+          }
+        });
+      } catch (e) {
+        console.error('PeerJS init failed:', e);
+        addLog('ERR', 'Exception PeerJS: ' + e.message, '#ff3366');
+      }
+    }
+
+    function setAuthStatus(status) {
+      authStatus = status;
+      if (status === 'approved') {
+        // Recharger les paroles du morceau en cours dès l'autorisation
+        if (typeof lastLyricsTrackKey !== 'undefined') lastLyricsTrackKey = '';
+        el.connDot.className = 'status-dot connected';
+        el.connText.textContent = 'Connecté au PC';
+        addLog('AUTH', 'Appareil autorisé par le PC', '#00e676');
+      } else if (status === 'pending') {
+        el.connDot.className = 'status-dot';
+        el.connText.textContent = 'Acceptez la connexion sur votre PC…';
+        addLog('AUTH', 'En attente d\'autorisation sur le PC', '#ffbb00');
+      } else if (status === 'denied') {
+        el.connDot.className = 'status-dot disconnected';
+        el.connText.textContent = 'Accès refusé par le PC. Rechargez pour réessayer.';
+        addLog('AUTH', 'Accès refusé par le PC', '#ff3366');
+      } else if (status === 'revoked') {
+        el.connDot.className = 'status-dot disconnected';
+        el.connText.textContent = 'Déconnecté par le PC. Rechargez pour réessayer.';
+        addLog('AUTH', 'Appareil déconnecté par le PC', '#ff3366');
+      }
+    }
+
+    function connectToPeerHost() {
+      if (!peer || peer.destroyed) return;
+      if (authStatus === 'denied' || authStatus === 'revoked') return;
+      if (peer.disconnected) {
+        peer.reconnect();
+        return;
+      }
+      addLog('CONN', 'Tentative de connexion à ' + targetRoomId + '…', '#ffbb00');
+      authStatus = 'pending';
+      dataChannel = peer.connect(targetRoomId, {
+        reliable: true,
+        serialization: 'json'
+      });
+
+      let lastLoggedTrack = '';
+      let lastLoggedPlay = null;
+
+      function handleIncomingData(raw) {
+        if (!raw) return;
+        let payload = raw;
+        if (typeof payload === 'string') {
+          try { payload = JSON.parse(payload); } catch (e) {}
+        }
+        if (typeof payload !== 'object' || !payload) return;
+
+        if (payload.type === 'auth') {
+          if (['pending', 'approved', 'denied', 'revoked'].includes(payload.status)) {
+            setAuthStatus(payload.status);
+          }
+          return;
+        }
+        if (authStatus !== 'approved') return;
+
+        if (payload.type === 'diag-log') {
+          addLog('PC', payload.message, '#a8ff00');
+        } else if (payload.type === 'state') {
+          const s = payload.data || {};
+          const trackKey = (s.title || '') + '|' + (s.artist || '');
+          if (trackKey !== lastLoggedTrack || s.isPlaying !== lastLoggedPlay) {
+            lastLoggedTrack = trackKey;
+            lastLoggedPlay = s.isPlaying;
+            addLog('REÇU', `State: [${s.isPlaying ? '▶ EN LECTURE' : '⏸ EN PAUSE'}] "${s.title}" (${s.artist})`, '#b388ff');
+          }
+          applyState(payload.data);
+        } else if (payload.type === 'lyrics') {
+          applyLyricsResponse(payload);
+        } else if (payload.type === 'search-results') {
+          addLog('REÇU', `Recherche: ${payload.results?.length || 0} résultats pour "${payload.query}"`, '#00e5ff');
+          renderSearchResults(payload.results, payload.query);
+        }
+      }
+
+      function bindNativeClientChannel(dc) {
+        if (!dc || dc._ytmBound) return;
+        dc._ytmBound = true;
+        try { dc.binaryType = 'arraybuffer'; } catch (e) {}
+
+        dc.addEventListener('message', async (evt) => {
+          let data = evt.data;
+          if (data instanceof Blob) {
+            try { data = await data.text(); } catch (e) {}
+          } else if (data instanceof ArrayBuffer || ArrayBuffer.isView(data)) {
+            try { data = new TextDecoder().decode(data); } catch (e) {}
+          }
+          handleIncomingData(data);
+        });
+      }
+
+      // Les messages n'arrivent que par le canal natif : pas de handler dataChannel.on('data'),
+      // sinon chaque message serait traité deux fois.
+      dataChannel.on('open', () => {
+        addLog('CONN', 'Canal WebRTC ouvert. Demande d\'autorisation au PC…', '#00e676');
+        if (dataChannel.dataChannel) bindNativeClientChannel(dataChannel.dataChannel);
+        setAuthStatus('pending');
+        sendRaw({ type: 'hello', deviceId, deviceName: getDeviceName() });
+      });
+
+      dataChannel.on('close', () => {
+        if (authStatus === 'denied' || authStatus === 'revoked') return;
+        el.connDot.className = 'status-dot disconnected';
+        el.connText.textContent = 'Déconnecté du PC. Reconnexion…';
+        addLog('CONN', 'Canal fermé. Reconnexion dans 2.5s…', '#ff9100');
+        authStatus = 'pending';
+        setTimeout(connectToPeerHost, 2500);
+      });
+    }
+
+    initWebRTCClient();
+
+    // ==========================================
+    // Gestion de la Recherche YouTube Music
+    // ==========================================
+    let isSearchOpen = false;
+    let searchDebounceTimer = null;
+    let currentSearchReqId = '';
+
+    function toggleSearchPanel() {
+      vibrate();
+      isSearchOpen = !isSearchOpen;
+      el.btnSearchToggle.classList.toggle('active', isSearchOpen);
+      el.searchPanel.style.display = isSearchOpen ? 'flex' : 'none';
+      if (isSearchOpen) {
+        el.searchInput.focus();
+        if (el.searchInput.value.trim().length >= 2) {
+          executeSearch(el.searchInput.value.trim());
+        }
+      }
+    }
+
+    if (el.btnSearchToggle) {
+      el.btnSearchToggle.addEventListener('click', toggleSearchPanel);
+    }
+
+
+    if (el.searchClear) {
+      el.searchClear.addEventListener('click', () => {
+        el.searchInput.value = '';
+        el.searchClear.style.display = 'none';
+        el.searchResultsList.innerHTML = '';
+        el.searchStatus.style.display = 'none';
+        el.searchInput.focus();
+      });
+    }
+
+    function executeSearch(query) {
+      if (!query || query.length < 2) {
+        el.searchResultsList.innerHTML = '';
+        el.searchStatus.style.display = 'none';
+        return;
+      }
+
+      el.searchStatus.textContent = 'Recherche en cours…';
+      el.searchStatus.style.display = 'block';
+
+      currentSearchReqId = 'req-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6);
+      const searchSent = sendP2PMessage({
+        action: 'search',
+        query: query,
+        requestId: currentSearchReqId
+      });
+
+      if (!searchSent) {
+        el.searchStatus.textContent = 'Connexion au PC nécessaire pour chercher';
+      }
+    }
+
+    if (el.searchInput) {
+      el.searchInput.addEventListener('input', () => {
+        const val = el.searchInput.value;
+        el.searchClear.style.display = val ? 'flex' : 'none';
+        clearTimeout(searchDebounceTimer);
+        searchDebounceTimer = setTimeout(() => {
+          executeSearch(val.trim());
+        }, 350);
+      });
+
+      el.searchInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+          clearTimeout(searchDebounceTimer);
+          executeSearch(el.searchInput.value.trim());
+        }
+      });
+    }
+
+    function renderSearchResults(results, query) {
+      el.searchResultsList.innerHTML = '';
+
+      if (!Array.isArray(results) || results.length === 0) {
+        el.searchStatus.textContent = query ? 'Aucun résultat trouvé pour « ' + query + ' »' : '';
+        el.searchStatus.style.display = query ? 'block' : 'none';
+        return;
+      }
+
+      el.searchStatus.style.display = 'none';
+
+      results.forEach((item) => {
+        const row = document.createElement('div');
+        row.className = 'search-item';
+
+        const thumb = item.thumbnail || `https://i.ytimg.com/vi/${item.videoId}/mqdefault.jpg`;
+        const img = document.createElement('img');
+        img.className = 'search-thumb';
+        img.src = thumb;
+        img.loading = 'lazy';
+        img.onerror = () => {
+          img.outerHTML = '<div class="search-thumb" style="display:flex;align-items:center;justify-content:center;background:rgb(var(--fg-rgb) / 0.06);"><svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" opacity="0.35"><path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z"/></svg></div>';
+        };
+        row.appendChild(img);
+
+        const info = document.createElement('div');
+        info.className = 'search-info';
+
+        const t = document.createElement('div');
+        t.className = 'search-title';
+        t.textContent = item.title;
+        t.title = item.title;
+        info.appendChild(t);
+
+        const a = document.createElement('div');
+        a.className = 'search-artist';
+        a.textContent = (item.artist || 'Artiste') + (item.duration ? ' • ' + item.duration : '');
+        info.appendChild(a);
+
+        row.appendChild(info);
+
+        const actions = document.createElement('div');
+        actions.className = 'search-actions';
+
+        // Bouton 1 : Lancer directement la lecture
+        const btnPlay = document.createElement('button');
+        btnPlay.className = 'btn-search-act play-act';
+        btnPlay.title = 'Lancer ce titre directement';
+        btnPlay.innerHTML = '<svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>';
+        btnPlay.addEventListener('click', (e) => {
+          e.stopPropagation();
+          vibrate();
+          const trackData = {
+            videoId: item.videoId,
+            title: item.title,
+            artist: item.artist,
+            duration: item.duration,
+            thumbnail: thumb
+          };
+          applyState({
+            title: item.title,
+            artist: item.artist,
+            albumArt: thumb,
+            isPlaying: true
+          });
+          sendAction('play-track', trackData);
+        });
+
+        // Bouton 2 : Ajouter à la file d'attente
+        const btnQueue = document.createElement('button');
+        btnQueue.className = 'btn-search-act queue-act';
+        btnQueue.title = 'Ajouter à la file d\'attente';
+        btnQueue.innerHTML = '<svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/></svg>';
+        btnQueue.addEventListener('click', (e) => {
+          e.stopPropagation();
+          vibrate();
+          const trackPayload = {
+            videoId: item.videoId,
+            title: item.title,
+            artist: item.artist,
+            duration: item.duration,
+            thumbnail: thumb
+          };
+          sendAction('queue-track', trackPayload);
+
+          btnQueue.classList.add('added');
+          btnQueue.innerHTML = '<svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M9 16.2L4.8 12l-1.4 1.4L9 19 21 7l-1.4-1.4L9 16.2z"/></svg>';
+          btnQueue.title = 'Ajouté à la file d\'attente !';
+          setTimeout(() => {
+            btnQueue.classList.remove('added');
+            btnQueue.innerHTML = '<svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/></svg>';
+            btnQueue.title = 'Ajouter à la file d\'attente';
+          }, 2000);
+
+          // Ajout immédiat dans l'affichage local de la queue juste après le titre en cours
+          let curIdx = currentQueue.findIndex(it => it.isCurrent);
+          const insertIdx = (curIdx !== -1) ? curIdx + 1 : currentQueue.length;
+          currentQueue.splice(insertIdx, 0, {
+            index: insertIdx,
+            title: item.title,
+            artist: item.artist,
+            duration: item.duration,
+            thumbnail: thumb,
+            videoId: item.videoId,
+            isCurrent: false
+          });
+          currentQueue.forEach((it, i) => { it.index = i; });
+          renderQueue(currentQueue);
+        });
+
+        actions.appendChild(btnPlay);
+        actions.appendChild(btnQueue);
+        row.appendChild(actions);
+
+        el.searchResultsList.appendChild(row);
+      });
+    }
+
+    // ==========================================
+    // Contrôles du Lecteur
+    // ==========================================
+    el.play.addEventListener('click', () => sendAction('play-pause'));
+    el.prev.addEventListener('click', () => sendAction('prev'));
+    el.next.addEventListener('click', () => sendAction('next'));
+    el.like.addEventListener('click', () => sendAction('like'));
+    el.dislike.addEventListener('click', () => sendAction('dislike'));
+    el.shuffle.addEventListener('click', () => sendAction('toggle-shuffle'));
+
+    let currentRepeatMode = 0;
+    function renderRepeatBtn(mode) {
+      currentRepeatMode = mode;
+      if (mode === 2) {
+        el.repeatIcon.innerHTML = REPEAT_ONE_SVG;
+        el.repeat.classList.add('active');
+        el.repeat.title = 'Répéter le titre en cours (1)';
+      } else if (mode === 1) {
+        el.repeatIcon.innerHTML = REPEAT_ALL_SVG;
+        el.repeat.classList.add('active');
+        el.repeat.title = 'Répéter la playlist (Tout)';
+      } else {
+        el.repeatIcon.innerHTML = REPEAT_OFF_SVG;
+        el.repeat.classList.remove('active');
+        el.repeat.title = 'Répétition désactivée';
+      }
+    }
+
+    el.repeat.addEventListener('click', () => {
+      vibrate();
+      sendAction('toggle-repeat');
+      const nextMode = (currentRepeatMode + 1) % 3;
+      renderRepeatBtn(nextMode);
+    });
+
+    if (el.fsPlay) el.fsPlay.addEventListener('click', () => sendAction('play-pause'));
+    if (el.fsPrev) el.fsPrev.addEventListener('click', () => sendAction('prev'));
+    if (el.fsNext) el.fsNext.addEventListener('click', () => sendAction('next'));
+
+    // ==========================================
+    // Panneaux tirables (paroles, file d'attente)
+    // ==========================================
+    // Suivi 1:1 du doigt sur l'en-tête, élan projeté au relâchement (décélération façon iOS),
+    // aimantation mi-hauteur / plein écran / fermé, résistance élastique au-delà du haut.
+    // Ressort sans dépassement, animé depuis la position affichée : interruptible à tout moment.
+    const sheets = (() => {
+      const scrim = document.getElementById('sheet-scrim');
+      const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
+      const registry = new Map();
+      let current = null;
+      const snaps = () => ({ full: 48, half: Math.round(window.innerHeight * 0.4), closed: Math.round(window.innerHeight * 1.05) });
+      const project = (v, d = 0.998) => (v / 1000) * d / (1 - d);
+      const rubber = (over, dim, c = 0.55) => (over * dim * c) / (dim + c * Math.abs(over));
+
+      function paint(entry, y) {
+        entry.y = y;
+        entry.el.style.transform = 'translateY(' + y + 'px)';
+        const s = snaps();
+        const open = Math.max(0, Math.min(1, 1 - (y - s.half) / (s.closed - s.half)));
+        scrim.style.opacity = String(open);
+        scrim.style.pointerEvents = open > 0.05 ? 'auto' : 'none';
+      }
+
+      function settle(entry, target, velocity = 0) {
+        cancelAnimationFrame(entry.raf);
+        const done = () => {
+          if (target >= snaps().closed) {
+            if (current === entry) current = null;
+            if (entry.onClose) entry.onClose();
+          }
+        };
+        if (reduceMotion) { paint(entry, target); done(); return; }
+        const response = 0.32;
+        const k = (2 * Math.PI / response) ** 2;
+        const c = 4 * Math.PI / response; // amortissement critique : aucun dépassement
+        let v = velocity;
+        let last = performance.now();
+        const tick = (t) => {
+          const dt = Math.min(0.032, (t - last) / 1000 || 0.016);
+          last = t;
+          v += (-k * (entry.y - target) - c * v) * dt;
+          const y = entry.y + v * dt;
+          if (Math.abs(y - target) < 0.5 && Math.abs(v) < 5) { paint(entry, target); done(); return; }
+          paint(entry, y);
+          entry.raf = requestAnimationFrame(tick);
+        };
+        entry.raf = requestAnimationFrame(tick);
+      }
+
+      function register(name, el, hooks = {}) {
+        const entry = { name, el, y: snaps().closed, raf: 0, onOpen: hooks.onOpen, onClose: hooks.onClose };
+        registry.set(name, entry);
+        paint(entry, entry.y);
+        scrim.style.opacity = '0';
+        scrim.style.pointerEvents = 'none';
+        const head = el.querySelector('.sheet-head');
+        let drag = null;
+        head.addEventListener('pointerdown', (e) => {
+          if (e.target.closest('button')) return; // les boutons de l'en-tête restent des boutons
+          try { head.setPointerCapture(e.pointerId); } catch (err) {}
+          cancelAnimationFrame(entry.raf);
+          drag = { id: e.pointerId, startY: e.clientY, startPos: entry.y, hist: [[e.clientY, e.timeStamp]] };
+        });
+        head.addEventListener('pointermove', (e) => {
+          if (!drag || e.pointerId !== drag.id) return;
+          let y = drag.startPos + (e.clientY - drag.startY);
+          const top = snaps().full;
+          if (y < top) y = top - rubber(top - y, window.innerHeight);
+          paint(entry, y);
+          drag.hist.push([e.clientY, e.timeStamp]);
+          if (drag.hist.length > 6) drag.hist.shift();
+        });
+        const release = (e) => {
+          if (!drag || e.pointerId !== drag.id) return;
+          const a = drag.hist[0], b = drag.hist[drag.hist.length - 1];
+          const v = b[1] > a[1] ? ((b[0] - a[0]) / (b[1] - a[1])) * 1000 : 0;
+          const landing = entry.y + project(v);
+          const s = snaps();
+          const target = [s.full, s.half, s.closed].reduce((best, p) => (Math.abs(p - landing) < Math.abs(best - landing) ? p : best), s.half);
+          drag = null;
+          settle(entry, target, v);
+        };
+        head.addEventListener('pointerup', release);
+        head.addEventListener('pointercancel', release);
+      }
+
+      function open(name, where = 'half') {
+        const entry = registry.get(name);
+        if (!entry) return;
+        if (current && current !== entry) close(true);
+        current = entry;
+        if (entry.onOpen) entry.onOpen();
+        settle(entry, snaps()[where]);
+      }
+
+      function close(instant) {
+        if (!current) return;
+        const entry = current;
+        if (instant) {
+          cancelAnimationFrame(entry.raf);
+          paint(entry, snaps().closed);
+          current = null;
+          if (entry.onClose) entry.onClose();
+        } else {
+          settle(entry, snaps().closed);
+        }
+      }
+
+      scrim.addEventListener('click', () => close());
+      return { register, open, close, isOpen: (name) => current === registry.get(name) };
+    })();
+
+    // Remplissage des curseurs (piste fine, épaisse sous le doigt)
+    function paintRange(input) {
+      const min = +input.min || 0;
+      const max = input.max === '' ? 100 : +input.max;
+      input.style.setProperty('--p', ((+input.value - min) / (max - min)) * 100 + '%');
+    }
+    for (const r of document.querySelectorAll('input.range')) {
+      paintRange(r);
+      r.addEventListener('input', () => paintRange(r));
+      r.addEventListener('pointerdown', () => r.classList.add('is-active'));
+      for (const ev of ['pointerup', 'pointercancel', 'blur']) r.addEventListener(ev, () => r.classList.remove('is-active'));
+    }
+    // L'état reçu du PC change la valeur sans événement : on repeint régulièrement
+    setInterval(() => document.querySelectorAll('input.range').forEach(paintRange), 250);
+
+    // Panneau « À suivre » (la file d'attente et la recherche)
+    const queueBtn = document.getElementById('queue-btn');
+    sheets.register('queue', document.getElementById('queue-box'), {
+      onOpen() { queueBtn.classList.add('active'); },
+      onClose() { queueBtn.classList.remove('active'); }
+    });
+    queueBtn.addEventListener('click', () => {
+      vibrate();
+      if (sheets.isOpen('queue')) sheets.close();
+      else sheets.open('queue');
+    });
+
+    // ==========================================
+    // Gestion des Paroles et Plein Écran
+    // ==========================================
+    let lyricsOpen = false;
+    let isFullscreenLyrics = false;
+    let lyricsLines = [];
+    let lastLyricsTrackKey = '';
+    let currentActiveLyricIndex = -1;
+    let lastTrackDuration = 0;
+
+    if (el.lyricsBtn) {
+      sheets.register('lyrics', el.lyricsBox, {
+        onOpen() {
+          lyricsOpen = true;
+          el.lyricsBtn.classList.add('active');
+          if (lyricsLines.length === 0) {
+            fetchLyrics(el.title.textContent, el.artist.textContent, lastTrackDuration);
+          }
+        },
+        onClose() {
+          lyricsOpen = false;
+          el.lyricsBtn.classList.remove('active');
+          if (isFullscreenLyrics) toggleFullscreenLyrics();
+        }
+      });
+      el.lyricsBtn.addEventListener('click', () => {
+        vibrate();
+        if (sheets.isOpen('lyrics')) sheets.close();
+        else sheets.open('lyrics');
+      });
+    }
+
+    function toggleFullscreenLyrics() {
+      vibrate();
+      isFullscreenLyrics = !isFullscreenLyrics;
+      el.lyricsBox.classList.toggle('is-fullscreen', isFullscreenLyrics);
+      document.body.style.overflow = isFullscreenLyrics ? 'hidden' : '';
+
+      if (el.fsIcon) {
+        el.fsIcon.innerHTML = isFullscreenLyrics
+          ? '<path d="M5 16h3v3h2v-5H5v2zm3-8H5v2h5V5H8v3zm6 11h2v-3h3v-2h-5v5zm2-14v3h3v2h-5V5h2z"/>'
+          : '<path d="M7 14H5v5h5v-2H7v-3zm-2-4h2V7h3V5H5v5zm12 7h-3v2h5v-5h-2v3zM14 5v2h3v3h2V5h-5z"/>';
+      }
+
+      if (isFullscreenLyrics) {
+        requestAnimationFrame(() => {
+          if (currentActiveLyricIndex >= 0 && el.lyricsList.children[currentActiveLyricIndex]) {
+            const activeEl = el.lyricsList.children[currentActiveLyricIndex];
+            const scrollContainer = el.lyricsScroll;
+            if (scrollContainer) {
+              const scrollRect = scrollContainer.getBoundingClientRect();
+              const lineRect = activeEl.getBoundingClientRect();
+              const offset = (lineRect.top - scrollRect.top) - (scrollRect.height / 2) + (lineRect.height / 2);
+              scrollContainer.scrollBy({ top: offset, behavior: 'instant' });
+            }
+          }
+        });
+      }
+    }
+
+    if (el.btnFs) {
+      el.btnFs.addEventListener('click', toggleFullscreenLyrics);
+    }
+
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && isFullscreenLyrics) {
+        toggleFullscreenLyrics();
+      }
+    });
+
+    // Les paroles sont recherchées par le PC (une seule fois par morceau, avec cache) :
+    // on les lui demande et on ignore toute réponse qui ne concerne plus le morceau en cours.
+    let pendingLyricsReq = '';
+    let lastPcTrackKey = '';
+    let lyricsRetries = 0;
+
+    function fetchLyrics(rawTitle) {
+      el.lyricsList.innerHTML = '';
+      lyricsLines = [];
+      currentActiveLyricIndex = -1;
+      if (!rawTitle || rawTitle.includes('En attente') || rawTitle.includes('connexion')) {
+        el.lyricsStatus.textContent = 'En attente d\'un morceau…';
+        el.lyricsStatus.hidden = false;
+        return;
+      }
+      el.lyricsStatus.textContent = 'Chargement des paroles…';
+      el.lyricsStatus.hidden = false;
+      lyricsRetries = 0;
+      requestLyrics();
+    }
+
+    function requestLyrics() {
+      pendingLyricsReq = 'lyr-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6);
+      if (!sendP2PMessage({ action: 'get-lyrics', requestId: pendingLyricsReq })) {
+        el.lyricsStatus.textContent = 'Connexion au PC nécessaire pour les paroles.';
+      }
+    }
+
+    function applyLyricsResponse(payload) {
+      if (!payload || payload.requestId !== pendingLyricsReq) return;
+      pendingLyricsReq = '';
+      // Le PC n'est pas encore passé au morceau affiché ici : on redemande un peu plus tard
+      if (lastPcTrackKey && payload.key && payload.key !== lastPcTrackKey && lyricsRetries < 6) {
+        lyricsRetries++;
+        setTimeout(requestLyrics, 1000);
+        return;
+      }
+      const data = payload.lyrics;
+      if (data && data.synced) {
+        lyricsLines = parseLrc(data.synced);
+      } else if (data && data.plain) {
+        lyricsLines = data.plain.split('\n').map(line => ({ time: -1, text: line.trim() }));
+      } else {
+        lyricsLines = [];
+      }
+      if (lyricsLines.length === 0) {
+        el.lyricsStatus.textContent = 'Aucune parole trouvée pour ce morceau.';
+        el.lyricsStatus.hidden = false;
+      } else {
+        el.lyricsStatus.hidden = true;
+        prepareLyricsWords();
+        renderLyrics();
+      }
+    }
+
+    function parseLrc(lrc) {
+      const out = [];
+      let offsetSec = 0;
+      const offsetMatch = lrc.match(/\[offset:\s*([+-]?\d+)\s*\]/i);
+      if (offsetMatch) {
+        offsetSec = parseInt(offsetMatch[1], 10) / 1000;
+      }
+
+      for (const line of lrc.split('\n')) {
+        let work = line.trim();
+        const stamps = [];
+        let m;
+        while ((m = work.match(/^\[(\d+):(\d+)(?:[.:](\d+))?\]/))) {
+          const mm = parseInt(m[1], 10);
+          const ss = parseInt(m[2], 10);
+          const ff = m[3] ? parseInt(m[3].padEnd(3, '0').slice(0, 3), 10) / 1000 : 0;
+          stamps.push(mm * 60 + ss + ff + offsetSec);
+          work = work.slice(m[0].length);
+        }
+        const text = work.trim();
+        for (const t of stamps) out.push({ time: Math.max(0, t), text });
+      }
+      out.sort((a, b) => a.time - b.time);
+      return out;
+    }
+
+    // Calcul précis des durées mot par mot pour l'animation BetterLyrics
+    function prepareLyricsWords() {
+      for (let i = 0; i < lyricsLines.length; i++) {
+        const item = lyricsLines[i];
+        if (item.time < 0) {
+          item.words = [{ text: item.text || '♪', start: -1, end: -1 }];
+          continue;
+        }
+
+        let nextTime = (i + 1 < lyricsLines.length && lyricsLines[i + 1].time > item.time)
+          ? lyricsLines[i + 1].time
+          : item.time + 3.8;
+
+        const rawDur = nextTime - item.time;
+        const wordsRaw = (item.text || '♪').trim().split(/\s+/).filter(Boolean);
+        const wordsList = wordsRaw.length ? wordsRaw : ['♪'];
+
+        let effectiveDur = rawDur <= 5.5
+          ? Math.max(0.8, rawDur - 0.12)
+          : Math.min(rawDur - 0.4, Math.max(1.8, wordsList.length * 0.45));
+
+        const weights = wordsList.map(w => Math.max(1, w.replace(/[^\p{L}\p{N}]/gu, '').length));
+        const totalWeight = weights.reduce((acc, w) => acc + w, 0) || 1;
+
+        let curWordStart = item.time;
+        item.words = wordsList.map((word, wIdx) => {
+          const wDur = (weights[wIdx] / totalWeight) * effectiveDur;
+          const wStart = curWordStart;
+          const wEnd = curWordStart + wDur;
+          curWordStart = wEnd;
+          return { text: word, start: wStart, end: wEnd };
+        });
+        item.endTime = item.time + effectiveDur;
+      }
+    }
+
+    function renderLyrics() {
+      el.lyricsList.innerHTML = '';
+      currentActiveLyricIndex = -1;
+
+      lyricsLines.forEach((item, idx) => {
+        const div = document.createElement('div');
+        div.className = 'lyric-line';
+        div.dataset.idx = idx;
+
+        if (Array.isArray(item.words) && item.words.length > 0) {
+          item.words.forEach((wObj, wIdx) => {
+            const span = document.createElement('span');
+            span.className = 'lyric-word future';
+            span.dataset.wordIdx = wIdx;
+            span.textContent = wObj.text;
+            div.appendChild(span);
+            if (wIdx < item.words.length - 1) {
+              div.appendChild(document.createTextNode(' '));
+            }
+          });
+        } else {
+          div.textContent = item.text || '♪';
+        }
+
+        if (item.time >= 0) {
+          div.addEventListener('click', () => {
+            vibrate();
+            sendAction('seek-absolute', item.time);
+          });
+        }
+        el.lyricsList.appendChild(div);
+      });
+    }
+
+    let estimatedCurrentTime = 0;
+    let lastStateTime = Date.now();
+    let isTrackPlaying = false;
+
+    function updateActiveLyric(currentTime) {
+      if (!lyricsLines.length || !lyricsOpen) return;
+
+      // 1. Détection de la ligne active
+      let activeIdx = -1;
+      for (let i = 0; i < lyricsLines.length; i++) {
+        if (lyricsLines[i].time >= 0 && lyricsLines[i].time <= currentTime + 0.15) {
+          activeIdx = i;
+        } else if (lyricsLines[i].time > currentTime + 0.15) {
+          break;
+        }
+      }
+
+      const all = el.lyricsList.children;
+
+      // 2. Gestion du défilement lors du changement de ligne
+      if (activeIdx !== currentActiveLyricIndex) {
+        currentActiveLyricIndex = activeIdx;
+        for (let i = 0; i < all.length; i++) {
+          const isAct = (i === activeIdx);
+          const isPast = (activeIdx >= 0 && i < activeIdx);
+          all[i].classList.toggle('active', isAct);
+          all[i].classList.toggle('past-line', isPast);
+
+          if (!isAct) {
+            const spans = all[i].querySelectorAll('.lyric-word');
+            for (const sp of spans) {
+              sp.className = isPast ? 'lyric-word past' : 'lyric-word future';
+              sp.style.removeProperty('--prog');
+            }
+          }
+        }
+
+        if (activeIdx >= 0 && all[activeIdx]) {
+          const activeEl = all[activeIdx];
+          const scrollContainer = el.lyricsScroll;
+          if (scrollContainer) {
+            const scrollRect = scrollContainer.getBoundingClientRect();
+            const lineRect = activeEl.getBoundingClientRect();
+            const offset = (lineRect.top - scrollRect.top) - (scrollRect.height / 2) + (lineRect.height / 2);
+            scrollContainer.scrollBy({ top: offset, behavior: 'smooth' });
+          }
+        }
+      }
+
+      // 3. Animation mot par mot au fur et à mesure de la prononciation (Style BetterLyrics)
+      if (activeIdx >= 0 && all[activeIdx] && lyricsLines[activeIdx] && lyricsLines[activeIdx].words) {
+        const lineItem = lyricsLines[activeIdx];
+        const lineEl = all[activeIdx];
+        const spans = lineEl.querySelectorAll('.lyric-word');
+
+        for (let wIdx = 0; wIdx < lineItem.words.length; wIdx++) {
+          const wObj = lineItem.words[wIdx];
+          const span = spans[wIdx];
+          if (!span) continue;
+
+          if (currentTime >= wObj.end) {
+            if (!span.classList.contains('past') || span.classList.contains('singing')) {
+              span.className = 'lyric-word past';
+              span.style.removeProperty('--prog');
+            }
+          } else if (currentTime < wObj.start) {
+            if (!span.classList.contains('future')) {
+              span.className = 'lyric-word future';
+              span.style.removeProperty('--prog');
+            }
+          } else {
+            span.className = 'lyric-word singing';
+            const wordDur = Math.max(0.05, wObj.end - wObj.start);
+            const p = Math.max(0, Math.min(1, (currentTime - wObj.start) / wordDur));
+            span.style.setProperty('--prog', (p * 100).toFixed(1) + '%');
+          }
+        }
+      }
+    }
+
+    // Animation 60fps ultra-fluide pour le karaoké mot par mot
+    function lyricsAnimLoop() {
+      if (isTrackPlaying && !isUserSeeking && lyricsOpen) {
+        const now = Date.now();
+        const delta = (now - lastStateTime) / 1000;
+        const current = estimatedCurrentTime + delta;
+        updateActiveLyric(current);
+      }
+      requestAnimationFrame(lyricsAnimLoop);
+    }
+    requestAnimationFrame(lyricsAnimLoop);
+
+    el.seek.addEventListener('input', () => { isUserSeeking = true; });
+    el.seek.addEventListener('change', () => {
+      sendAction('seek', el.seek.value / 10);
+      isUserSeeking = false;
+    });
+
+    el.volume.addEventListener('input', () => {
+      isUserVolume = true;
+      // Retour continu côté PC pendant le geste (setGestureVolume régule l'envoi)
+      if (typeof setGestureVolume === 'function') setGestureVolume(parseInt(el.volume.value, 10));
+    });
+    el.volume.addEventListener('change', () => {
+      sendAction('volume', parseInt(el.volume.value, 10));
+      isUserVolume = false;
+    });
+
+    // ==========================================
+    // Volume au geste (pincement caméra, glissement sur la pochette)
+    // ==========================================
+    // Les gestes produisent un flot de valeurs : on met à jour le curseur tout de suite et on
+    // n'envoie au PC qu'une valeur toutes les 120 ms au plus, sans vibration ni journal.
+    let gestureVolumeTimer = null;
+    let gestureVolumePending = null;
+    let gestureReleaseTimer = null;
+    let lastSentGestureVolume = -1;
+
+    function setGestureVolume(v) {
+      const vol = Math.round(Math.max(0, Math.min(100, v)));
+      el.volume.value = vol;
+      // L'état reçu du PC ne doit pas faire sauter le curseur pendant le geste
+      isUserVolume = true;
+      clearTimeout(gestureReleaseTimer);
+      gestureReleaseTimer = setTimeout(() => { isUserVolume = false; }, 1500);
+      gestureVolumePending = vol;
+      if (gestureVolumeTimer) return;
+      const flush = () => {
+        gestureVolumeTimer = null;
+        if (gestureVolumePending === null || gestureVolumePending === lastSentGestureVolume) return;
+        lastSentGestureVolume = gestureVolumePending;
+        sendP2PMessage({ action: 'volume', value: gestureVolumePending, msgId: 'g-' + Date.now() });
+        gestureVolumePending = null;
+        gestureVolumeTimer = setTimeout(flush, 120);
+      };
+      flush();
+    }
+
+    // --- Glissement vertical sur la pochette : toute la hauteur = 100 %
+    (function setupCoverSwipe() {
+      const wrap = document.getElementById('cover-wrap');
+      const bar = document.getElementById('cover-volume');
+      const fill = document.getElementById('cover-volume-fill');
+      let startY = 0;
+      let startVol = 0;
+      let swiping = false;
+      let pointerId = null;
+      let hideTimer = null;
+
+      const show = (v) => {
+        fill.style.width = v + '%';
+        bar.classList.add('visible');
+        clearTimeout(hideTimer);
+      };
+
+      wrap.addEventListener('pointerdown', (e) => {
+        pointerId = e.pointerId;
+        startY = e.clientY;
+        startVol = parseInt(el.volume.value, 10) || 0;
+        swiping = false;
+      });
+      wrap.addEventListener('pointermove', (e) => {
+        if (e.pointerId !== pointerId) return;
+        const dy = startY - e.clientY;
+        if (!swiping) {
+          if (Math.abs(dy) < 10) return; // simple appui : pas un glissement
+          swiping = true;
+          try { wrap.setPointerCapture(pointerId); } catch (err) {}
+          vibrate();
+        }
+        const v = Math.round(Math.max(0, Math.min(100, startVol + (dy / wrap.clientHeight) * 100)));
+        setGestureVolume(v);
+        show(v);
+      });
+      const end = (e) => {
+        if (e.pointerId !== pointerId) return;
+        pointerId = null;
+        if (swiping) hideTimer = setTimeout(() => bar.classList.remove('visible'), 700);
+        swiping = false;
+      };
+      wrap.addEventListener('pointerup', end);
+      wrap.addEventListener('pointercancel', end);
+    })();
+
+    // --- Curseur à la main (MediaPipe Hand Landmarker, calcul local sur le téléphone)
+    // La paume déplace un curseur rond ; pincer (pouce contre index) enfonce, écarter relâche.
+    // Pincement bref = clic ; pincer, déplacer, relâcher = glisser (curseurs de volume et de
+    // progression, pochette, listes). La position suit le centre de la paume, pas les doigts,
+    // pour que le pincement lui-même ne fasse pas bouger le curseur.
+    const HAND = {
+      MEDIAPIPE: 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14',
+      MODEL: 'https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task',
+      // Seule la zone centrale de l'image pilote le curseur : de petits gestes autour du
+      // centre couvrent tout l'écran, et la main reste là où la détection est la meilleure.
+      ZONE_X: [0.3, 0.7],
+      ZONE_Y: [0.25, 0.65],
+      // Filtre « One Euro » : lisse fort à l'arrêt (curseur calme), peu en mouvement rapide
+      FILTER_MIN_CUTOFF: 0.7, // Hz : plus bas = plus stable à l'arrêt
+      FILTER_BETA: 0.004,     // plus haut = plus réactif aux gestes rapides
+      FILTER_D_CUTOFF: 1.0,
+      // Pincement : écart pouce-index / taille de la main (poignet -> base du majeur) dans
+      // l'image. Un seuil absolu en centimètres sur la 3D de MediaPipe s'est révélé trop strict
+      // à l'usage (la 3D estimée ne descend pas toujours sous 3 cm doigts collés).
+      PINCH_ON: 0.30,         // en dessous : pincé
+      PINCH_OFF: 0.42,        // au-dessus : relâché (hystérésis)
+      // La 3D, rapportée à la taille de la main, sert seulement de garde-fou :
+      WORLD_VETO: 0.6,        // doigts nettement écartés en 3D : pas un pincement (main de profil)
+      WORLD_ON: 0.32,         // doigts nettement collés en 3D : pincement même si l'image hésite
+      PRESS_FRAMES: 2,        // images pincées consécutives avant d'enfoncer
+      RELEASE_FRAMES: 2,      // images ouvertes consécutives avant de relâcher (glisser stable)
+      CLICK_LOCK_MS: 180,     // le curseur reste figé au début du pincement (clic précis)
+      READY_MS: 200,          // main visible depuis au moins ce temps avant de pouvoir pincer
+      LOST_MS: 300,           // main absente depuis plus longtemps : curseur masqué, relâché
+      MAGNET: 0.45,           // attraction du curseur vers le centre du bouton survolé
+      MAGNET_MAX_PX: 90,      // seulement pour les petites cibles (boutons, pas les lignes)
+      STICKY_PX: 14,          // le survol tient encore à cette distance hors du bouton
+      FRAME_MS: 33            // repli sans requestVideoFrameCallback : ~30 analyses par seconde
+    };
+
+    const clamp01 = (v) => Math.max(0, Math.min(1, v));
+
+    // Filtre One Euro (Casiez et al., 2012) pour une coordonnée
+    function oneEuro() {
+      let x = null, dx = 0, last = 0;
+      const alpha = (cutoff, dt) => 1 / (1 + 1 / (2 * Math.PI * cutoff * dt));
+      return {
+        reset() { x = null; dx = 0; },
+        filter(value, now) {
+          if (x === null) { x = value; last = now; return x; }
+          const dt = Math.max(1e-3, (now - last) / 1000);
+          last = now;
+          const rawDx = (value - x) / dt;
+          dx += alpha(HAND.FILTER_D_CUTOFF, dt) * (rawDx - dx);
+          const cutoff = HAND.FILTER_MIN_CUTOFF + HAND.FILTER_BETA * Math.abs(dx);
+          x += alpha(cutoff, dt) * (value - x);
+          return x;
+        }
+      };
+    }
+
+    function newAirState() {
+      return { visible: false, x: 0, y: 0, pressed: false, pinchFrames: 0, openFrames: 0, pressedAt: 0, anchorX: 0, anchorY: 0, seenSince: 0, lastSeen: 0, fx: oneEuro(), fy: oneEuro(), pinch: null };
+    }
+
+    // Mesure du pincement. ratio : écart pouce-index / taille de la main dans l'image (principal).
+    // worldRatio : même rapport en 3D (null si indisponible), utilisé en garde-fou dans les deux sens.
+    function pinchLevel(landmarks, world) {
+      const d = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
+      const ratio = d(landmarks[4], landmarks[8]) / d(landmarks[0], landmarks[9]);
+      let worldRatio = null;
+      if (world && world[0] && world[4] && world[8] && world[9]) {
+        const d3 = (a, b) => Math.hypot(a.x - b.x, a.y - b.y, a.z - b.z);
+        const palm = d3(world[0], world[9]);
+        if (palm > 0.02) worldRatio = d3(world[4], world[8]) / palm;
+      }
+      let on = ratio < HAND.PINCH_ON;
+      if (on && worldRatio !== null && worldRatio > HAND.WORLD_VETO) on = false;  // main de profil
+      if (!on && worldRatio !== null && worldRatio < HAND.WORLD_ON) on = true;     // l'image hésite
+      const off = ratio > HAND.PINCH_OFF && !(worldRatio !== null && worldRatio < HAND.WORLD_ON);
+      return { on, off, ratio, worldRatio, approach: clamp01((ratio - HAND.PINCH_ON) / (HAND.PINCH_OFF * 1.4 - HAND.PINCH_ON)) };
+    }
+
+    // Logique pure (testable) : à partir des points de la main (ou null), met à jour l'état et
+    // renvoie les événements à appliquer : move, down, up (cancel si la main est perdue), hide.
+    function airStep(state, landmarks, now, vw, vh, world) {
+      const events = [];
+      const size = landmarks ? Math.hypot(landmarks[0].x - landmarks[9].x, landmarks[0].y - landmarks[9].y) : 0;
+      if (!landmarks || size < 0.02) {
+        state.seenSince = 0;
+        if (state.visible && now - state.lastSeen > HAND.LOST_MS) {
+          if (state.pressed) { state.pressed = false; events.push({ type: 'up', x: state.x, y: state.y, cancel: true }); }
+          state.visible = false;
+          state.fx.reset();
+          state.fy.reset();
+          events.push({ type: 'hide' });
+        }
+        return events;
+      }
+      state.lastSeen = now;
+      if (!state.seenSince) state.seenSince = now;
+
+      // Centre de la paume (poignet et bases des doigts), image retournée en miroir
+      const pts = [0, 5, 9, 13, 17].map(i => landmarks[i]);
+      const px = 1 - pts.reduce((s, p) => s + p.x, 0) / pts.length;
+      const py = pts.reduce((s, p) => s + p.y, 0) / pts.length;
+      const tx = clamp01((px - HAND.ZONE_X[0]) / (HAND.ZONE_X[1] - HAND.ZONE_X[0])) * vw;
+      const ty = clamp01((py - HAND.ZONE_Y[0]) / (HAND.ZONE_Y[1] - HAND.ZONE_Y[0])) * vh;
+      const fx = state.fx.filter(tx, now);
+      const fy = state.fy.filter(ty, now);
+
+      const pinch = pinchLevel(landmarks, world);
+      state.pinch = pinch;
+      if (!state.visible) {
+        state.visible = true;
+        state.x = fx;
+        state.y = fy;
+      } else if (state.pressed) {
+        state.x = fx;
+        state.y = fy;
+      } else {
+        // Doigts qui se rapprochent : le curseur ralentit pour que le clic tombe là où on visait
+        const k = 0.15 + 0.85 * pinch.approach;
+        state.x += (fx - state.x) * k;
+        state.y += (fy - state.y) * k;
+      }
+
+      // Pincement avec hystérésis et confirmation sur plusieurs images
+      const ready = now - state.seenSince >= HAND.READY_MS;
+      if (!state.pressed) {
+        state.pinchFrames = pinch.on ? state.pinchFrames + 1 : 0;
+        if (ready && state.pinchFrames >= HAND.PRESS_FRAMES) {
+          state.pressed = true;
+          state.openFrames = 0;
+          state.pressedAt = now;
+          state.anchorX = state.x;
+          state.anchorY = state.y;
+          events.push({ type: 'down', x: state.x, y: state.y });
+        }
+      } else {
+        state.openFrames = pinch.off ? state.openFrames + 1 : 0;
+        if (state.openFrames >= HAND.RELEASE_FRAMES) {
+          state.pressed = false;
+          state.pinchFrames = 0;
+          events.push({ type: 'up', x: state.x, y: state.y, cancel: false });
+        }
+      }
+      // Début de pincement : curseur figé pour que le clic tombe là où on visait
+      if (state.pressed && now - state.pressedAt < HAND.CLICK_LOCK_MS) {
+        state.x = state.anchorX;
+        state.y = state.anchorY;
+      }
+      events.unshift({ type: 'move', x: state.x, y: state.y });
+      return events;
+    }
+
+    // --- Application des événements sur la page
+    const airCursorEl = document.createElement('div');
+    airCursorEl.className = 'air-cursor';
+    airCursorEl.hidden = true;
+    document.body.appendChild(airCursorEl);
+
+    const AIR_TARGETS = 'button, input[type="range"], .queue-item, .search-item, .lyric-line, #cover-wrap, #sheet-scrim, a, input[type="text"], select';
+    const AIR_MAGNETIC = 'button, a, select';
+    const air = { hover: null, mode: null, target: null, startX: 0, startY: 0, lastY: 0, shownX: 0, shownY: 0 };
+
+    function airTargetAt(x, y) {
+      const hit = document.elementFromPoint(x, y);
+      return hit ? hit.closest(AIR_TARGETS) : null;
+    }
+
+    function insideRect(el, x, y, margin) {
+      const r = el.getBoundingClientRect();
+      return x >= r.left - margin && x <= r.right + margin && y >= r.top - margin && y <= r.bottom + margin;
+    }
+
+    function scrollableAncestor(node) {
+      for (let n = node; n && n !== document.body; n = n.parentElement) {
+        const cs = getComputedStyle(n);
+        if (/(auto|scroll)/.test(cs.overflowY) && n.scrollHeight > n.clientHeight + 2) return n;
+      }
+      return document.scrollingElement;
+    }
+
+    function setRangeFromX(input, x) {
+      const r = input.getBoundingClientRect();
+      const min = +input.min || 0;
+      const max = input.max === '' ? 100 : +input.max;
+      input.value = Math.round(min + clamp01((x - r.left) / r.width) * (max - min));
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    }
+
+    function airPointer(type, target, x, y) {
+      target.dispatchEvent(new PointerEvent(type, { bubbles: true, cancelable: true, pointerId: 77, pointerType: 'touch', isPrimary: true, clientX: x, clientY: y }));
+    }
+
+    function showCursor(x, y) {
+      air.shownX = x;
+      air.shownY = y;
+      airCursorEl.hidden = false;
+      airCursorEl.style.transform = 'translate(' + x + 'px, ' + y + 'px)';
+    }
+
+    function setHover(t) {
+      if (t === air.hover) return;
+      if (air.hover) air.hover.classList.remove('air-hover');
+      if (t) t.classList.add('air-hover');
+      air.hover = t;
+    }
+
+    function airApply(ev) {
+      if (ev.type === 'hide') {
+        airCursorEl.hidden = true;
+        setHover(null);
+        return;
+      }
+      if (ev.type === 'move') {
+        if (!air.mode) {
+          // Survol « collant » : on garde la cible tant que le curseur reste près d'elle
+          let t = air.hover && insideRect(air.hover, ev.x, ev.y, HAND.STICKY_PX) ? air.hover : airTargetAt(ev.x, ev.y);
+          setHover(t);
+          // Aimant : le curseur affiché est attiré vers le centre des petits boutons
+          let sx = ev.x, sy = ev.y;
+          if (t && t.matches(AIR_MAGNETIC)) {
+            const r = t.getBoundingClientRect();
+            if (r.width <= HAND.MAGNET_MAX_PX && r.height <= HAND.MAGNET_MAX_PX) {
+              sx += (r.left + r.width / 2 - sx) * HAND.MAGNET;
+              sy += (r.top + r.height / 2 - sy) * HAND.MAGNET;
+            }
+          }
+          showCursor(sx, sy);
+          return;
+        }
+        showCursor(ev.x, ev.y);
+        if (air.mode === 'range') setRangeFromX(air.target, ev.x);
+        else if (air.mode === 'cover') airPointer('pointermove', air.target, ev.x, ev.y);
+        else if (air.mode === 'scroll') { air.target.scrollTop -= ev.y - air.lastY; air.lastY = ev.y; }
+        else if (air.mode === 'press' && Math.abs(ev.y - air.startY) > 30) {
+          // Un appui qui glisse verticalement devient un défilement (listes, page)
+          air.target.classList.remove('air-pressed');
+          air.mode = 'scroll';
+          air.target = scrollableAncestor(air.target);
+          air.lastY = ev.y;
+        }
+        return;
+      }
+      if (ev.type === 'down') {
+        airCursorEl.classList.add('pressed');
+        // La cible survolée (aimant, survol collant) prime sur le point exact
+        const t = air.hover || airTargetAt(ev.x, ev.y);
+        air.startX = ev.x;
+        air.startY = air.lastY = ev.y;
+        setHover(null);
+        if (t && t.matches('input[type="range"]')) {
+          air.mode = 'range';
+          air.target = t;
+          setRangeFromX(t, ev.x);
+        } else if (t && t.id === 'cover-wrap') {
+          air.mode = 'cover';
+          air.target = t;
+          airPointer('pointerdown', t, ev.x, ev.y);
+        } else if (t) {
+          air.mode = 'press';
+          air.target = t;
+          t.classList.add('air-pressed');
+        } else {
+          air.mode = 'scroll';
+          air.target = scrollableAncestor(document.elementFromPoint(ev.x, ev.y));
+        }
+        return;
+      }
+      if (ev.type === 'up') {
+        airCursorEl.classList.remove('pressed');
+        const { mode, target } = air;
+        air.mode = null;
+        air.target = null;
+        if (mode === 'range') {
+          target.dispatchEvent(new Event('change', { bubbles: true }));
+        } else if (mode === 'cover') {
+          airPointer('pointerup', target, ev.x, ev.y);
+        } else if (mode === 'press') {
+          target.classList.remove('air-pressed');
+          // Tolérance au relâchement : un léger déplacement pendant le pincement ne l'annule pas
+          if (!ev.cancel && insideRect(target, ev.x, ev.y, 20)) {
+            if (target.matches('input[type="text"]')) target.focus();
+            else target.click();
+            vibrate();
+          }
+        }
+      }
+    }
+
+    const hand = { active: false, stream: null, video: null, landmarker: null, timer: null, wakeLock: null, debugCanvas: null, state: newAirState() };
+    const handBtn = document.getElementById('hand-btn');
+    const HAND_DEBUG = new URLSearchParams(location.search).has('debug');
+
+    function setHandUi(mode, detail) {
+      handBtn.className = 'btn-hand' + (mode ? ' ' + mode : '');
+      const titles = {
+        loading: 'Curseur à la main : démarrage de la caméra…',
+        tracking: 'Curseur à la main : main détectée (pincez pour cliquer)',
+        idle: 'Curseur à la main : montrez la main au centre de la caméra',
+        error: 'Curseur à la main indisponible' + (detail ? ' : ' + detail : '')
+      };
+      handBtn.title = titles[mode] || 'Curseur à la main (caméra) : paume pour viser, pincement pour cliquer';
+    }
+
+    async function loadHandLandmarker() {
+      const vision = await import(HAND.MEDIAPIPE + '/vision_bundle.mjs');
+      const fileset = await vision.FilesetResolver.forVisionTasks(HAND.MEDIAPIPE + '/wasm');
+      const create = (delegate) => vision.HandLandmarker.createFromOptions(fileset, {
+        baseOptions: { modelAssetPath: HAND.MODEL, delegate },
+        runningMode: 'VIDEO',
+        numHands: 1,
+        // Suivi image après image plus tolérant que la première détection : la main ne
+        // « décroche » pas au moindre flou de mouvement, sans accepter de fausses mains
+        minHandDetectionConfidence: 0.6,
+        minHandPresenceConfidence: 0.5,
+        minTrackingConfidence: 0.4
+      });
+      try {
+        return await create('GPU');
+      } catch (e) {
+        return await create('CPU'); // certains téléphones n'ont pas de WebGL utilisable
+      }
+    }
+
+    async function requestWakeLock() {
+      try {
+        if ('wakeLock' in navigator && !hand.wakeLock) {
+          hand.wakeLock = await navigator.wakeLock.request('screen');
+          hand.wakeLock.addEventListener('release', () => { hand.wakeLock = null; });
+        }
+      } catch (e) {}
+    }
+
+    function drawHandDebug(landmarks) {
+      const c = hand.debugCanvas;
+      if (!c || !hand.video) return;
+      const ctx = c.getContext('2d');
+      ctx.drawImage(hand.video, 0, 0, c.width, c.height);
+      // Zone centrale qui pilote le curseur (image non retournée : on retourne les X)
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.6)';
+      ctx.strokeRect((1 - HAND.ZONE_X[1]) * c.width, HAND.ZONE_Y[0] * c.height, (HAND.ZONE_X[1] - HAND.ZONE_X[0]) * c.width, (HAND.ZONE_Y[1] - HAND.ZONE_Y[0]) * c.height);
+      if (!landmarks) return;
+      ctx.fillStyle = hand.state.pressed ? '#00e676' : '#ff0055';
+      for (const i of [0, 4, 5, 8, 9, 13, 17]) {
+        ctx.beginPath();
+        ctx.arc(landmarks[i].x * c.width, landmarks[i].y * c.height, 3, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.strokeStyle = '#fff';
+      ctx.beginPath();
+      ctx.moveTo(landmarks[4].x * c.width, landmarks[4].y * c.height);
+      ctx.lineTo(landmarks[8].x * c.width, landmarks[8].y * c.height);
+      ctx.stroke();
+      // Mesures (texte remis à l'endroit : le canvas est affiché en miroir)
+      const p = hand.state.pinch;
+      if (p) {
+        ctx.save();
+        ctx.scale(-1, 1);
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
+        ctx.fillRect(-c.width, 0, c.width, 30);
+        ctx.fillStyle = '#fff';
+        ctx.font = '11px monospace';
+        ctx.fillText('2D ' + p.ratio.toFixed(2) + ' (pincé < ' + HAND.PINCH_ON + ')', -c.width + 4, 12);
+        ctx.fillText('3D ' + (p.worldRatio === null ? '—' : p.worldRatio.toFixed(2)) + (hand.state.pressed ? '  APPUI' : ''), -c.width + 4, 25);
+        ctx.restore();
+      }
+    }
+
+    // Traite une image : points de la main (ou null) -> curseur, clics, glisser
+    function airFeed(landmarks, now, world) {
+      const wasVisible = hand.state.visible;
+      const events = airStep(hand.state, landmarks, now, window.innerWidth, window.innerHeight, world);
+      events.forEach(airApply);
+      if (hand.state.visible !== wasVisible) setHandUi(hand.state.visible ? 'tracking' : 'idle');
+    }
+
+    let lastVideoTime = -1;
+    function handTick() {
+      if (!hand.active) return;
+      const now = performance.now();
+      // Une analyse par nouvelle image de la caméra (pas de travail en double sur la même image)
+      if (hand.video.readyState >= 2 && hand.video.currentTime !== lastVideoTime) {
+        lastVideoTime = hand.video.currentTime;
+        let landmarks = null;
+        let world = null;
+        try {
+          const res = hand.landmarker.detectForVideo(hand.video, now);
+          landmarks = res.landmarks && res.landmarks[0] ? res.landmarks[0] : null;
+          world = res.worldLandmarks && res.worldLandmarks[0] ? res.worldLandmarks[0] : null;
+        } catch (e) {}
+        airFeed(landmarks, now, world);
+        if (HAND_DEBUG) drawHandDebug(landmarks);
+      }
+      if (hand.video.requestVideoFrameCallback) hand.video.requestVideoFrameCallback(handTick);
+      else hand.timer = setTimeout(handTick, HAND.FRAME_MS);
+    }
+
+    async function startHandCursor() {
+      hand.active = true;
+      setHandUi('loading');
+      try {
+        hand.stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 }, frameRate: { ideal: 30 } },
+          audio: false
+        });
+        if (!hand.landmarker) hand.landmarker = await loadHandLandmarker();
+        if (!hand.active) { stopHandCursor(); return; } // désactivé pendant le chargement
+        hand.video = document.createElement('video');
+        hand.video.muted = true;
+        hand.video.playsInline = true;
+        hand.video.srcObject = hand.stream;
+        await hand.video.play();
+        if (HAND_DEBUG) {
+          hand.debugCanvas = document.createElement('canvas');
+          hand.debugCanvas.className = 'hand-debug';
+          hand.debugCanvas.width = 200;
+          hand.debugCanvas.height = 150;
+          document.body.appendChild(hand.debugCanvas);
+        }
+        hand.state = newAirState();
+        lastVideoTime = -1;
+        setHandUi('idle');
+        requestWakeLock();
+        addLog('MAIN', 'Curseur à la main actif', '#00e676');
+        handTick();
+      } catch (e) {
+        const msg = e && e.name === 'NotAllowedError' ? 'caméra refusée' : (e && e.message ? e.message : 'erreur');
+        addLog('ERR', 'Curseur à la main : ' + msg, '#ff3366');
+        stopHandCursor();
+        setHandUi('error', msg);
+      }
+    }
+
+    function stopHandCursor() {
+      hand.active = false;
+      clearTimeout(hand.timer);
+      // Un glisser en cours est relâché, le curseur disparaît
+      airFeed(null, Infinity);
+      if (hand.stream) hand.stream.getTracks().forEach(t => t.stop());
+      hand.stream = null;
+      if (hand.video) hand.video.srcObject = null;
+      hand.video = null;
+      if (hand.debugCanvas) hand.debugCanvas.remove();
+      hand.debugCanvas = null;
+      if (hand.wakeLock) hand.wakeLock.release().catch(() => {});
+      hand.wakeLock = null;
+      setHandUi('');
+    }
+
+    handBtn.addEventListener('click', () => {
+      vibrate();
+      if (hand.active) stopHandCursor();
+      else startHandCursor();
+    });
+
+    // Le verrou d'écran saute quand la page passe en arrière-plan : on le reprend au retour
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible' && hand.active) requestWakeLock();
+    });
+
+    // Accès pour les tests automatisés : logique pure + injection de mains simulées
+    window.__airCursor = { step: airStep, newState: newAirState, HAND, feed: airFeed, state: () => hand.state, shown: () => ({ x: air.shownX, y: air.shownY }) };
+
+    let lastArt = '';
+    let lastQueueHash = '';
+    let currentQueue = [];
+
+    function renderQueue(queue) {
+      currentQueue = Array.isArray(queue) ? [...queue] : [];
+      if (!Array.isArray(queue) || queue.length === 0) {
+        el.queueCount.textContent = '0';
+        el.queueList.innerHTML = '<div style="font-size: 0.8125rem; color: var(--text-dim); text-align: center; padding: 12px;">File d\'attente vide</div>';
+        return;
+      }
+
+      el.queueCount.textContent = queue.length;
+      el.queueList.innerHTML = '';
+
+      queue.forEach((item) => {
+        const row = document.createElement('div');
+        row.className = 'queue-item' + (item.isCurrent ? ' current' : '');
+
+        const thumbUrl = item.thumbnail || (item.videoId ? `https://i.ytimg.com/vi/${item.videoId}/mqdefault.jpg` : '');
+        if (thumbUrl) {
+          const img = document.createElement('img');
+          img.className = 'queue-thumb';
+          img.src = thumbUrl;
+          img.loading = 'lazy';
+          img.onerror = () => {
+            if (item.videoId && !img.src.includes('ytimg.com')) {
+              img.src = `https://i.ytimg.com/vi/${item.videoId}/mqdefault.jpg`;
+            } else {
+              img.outerHTML = '<div class="queue-thumb" style="display:flex;align-items:center;justify-content:center;background:rgb(var(--fg-rgb) / 0.06);"><svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor" opacity="0.35"><path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z"/></svg></div>';
+            }
+          };
+          row.appendChild(img);
+        } else {
+          const noImg = document.createElement('div');
+          noImg.className = 'queue-thumb';
+          noImg.style.cssText = 'display:flex;align-items:center;justify-content:center;background:rgb(var(--fg-rgb) / 0.06);';
+          noImg.innerHTML = '<svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor" opacity="0.35"><path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z"/></svg>';
+          row.appendChild(noImg);
+        }
+
+        const info = document.createElement('div');
+        info.className = 'queue-info';
+
+        const t = document.createElement('div');
+        t.className = 'queue-title';
+        t.textContent = item.title;
+        info.appendChild(t);
+
+        if (item.artist) {
+          const a = document.createElement('div');
+          a.className = 'queue-artist';
+          a.textContent = item.artist;
+          info.appendChild(a);
+        }
+        row.appendChild(info);
+
+        if (item.duration) {
+          const d = document.createElement('div');
+          d.className = 'queue-duration';
+          d.textContent = item.duration;
+          row.appendChild(d);
+        }
+
+        row.addEventListener('click', () => {
+          vibrate();
+          const trackData = {
+            index: item.index,
+            videoId: item.videoId,
+            title: item.title,
+            artist: item.artist,
+            duration: item.duration,
+            thumbnail: thumbUrl
+          };
+          applyState({
+            title: item.title,
+            artist: item.artist,
+            albumArt: thumbUrl,
+            isPlaying: true
+          });
+          sendAction('play-queue-index', trackData);
+        });
+
+        el.queueList.appendChild(row);
+      });
+    }
+
+    function applyState(s) {
+      if (!s) return;
+      if (s.title) el.title.textContent = s.title;
+      if (s.artist) el.artist.textContent = s.artist;
+      if (s.duration) lastTrackDuration = s.duration;
+
+      const art = safeHttpsUrl(s.albumArt);
+      if (art && art !== lastArt) {
+        lastArt = art;
+        el.cover.src = art;
+        el.bg.style.backgroundImage = 'url("' + art + '")';
+        el.coverWrap.style.setProperty('--art', 'url("' + art + '")');
+      }
+      el.playIcon.innerHTML = s.isPlaying ? PAUSE_SVG : PLAY_SVG;
+      if (el.fsPlayIcon) el.fsPlayIcon.innerHTML = s.isPlaying ? PAUSE_SVG : PLAY_SVG;
+      el.durTime.textContent = formatTime(s.duration);
+      if (!isUserSeeking) {
+        el.curTime.textContent = formatTime(s.currentTime);
+        if (s.duration > 0) el.seek.value = (s.currentTime / s.duration) * 1000;
+      }
+      if (!isUserVolume && typeof s.volume === 'number') {
+        el.volume.value = s.volume;
+      }
+      el.like.classList.toggle('active', !!s.liked);
+      el.dislike.classList.toggle('active', !!s.disliked);
+      el.shuffle.classList.toggle('active', !!s.shuffled);
+
+      if (typeof s.repeatMode === 'number') {
+        renderRepeatBtn(s.repeatMode);
+      }
+
+      // Paroles : clé = identifiant de la vidéo quand le PC le fournit (l'affichage
+      // anticipé d'un titre lancé depuis le mobile n'en a pas encore)
+      if (s.videoId) lastPcTrackKey = s.videoId;
+      const trackKey = s.videoId || ((s.title || '') + '|' + (s.artist || ''));
+      if (trackKey !== lastLyricsTrackKey) {
+        lastLyricsTrackKey = trackKey;
+        if (lyricsOpen) {
+          fetchLyrics(s.title, s.artist, s.duration);
+        } else {
+          lyricsLines = [];
+        }
+      }
+
+      // Mise à jour de l'horloge locale
+      if (typeof s.currentTime === 'number') {
+        estimatedCurrentTime = s.currentTime;
+        lastStateTime = Date.now();
+        isTrackPlaying = !!s.isPlaying;
+        updateActiveLyric(s.currentTime);
+      }
+
+      // File d'attente
+      if (s.queue) {
+        const h = JSON.stringify(s.queue);
+        if (h !== lastQueueHash) {
+          lastQueueHash = h;
+          renderQueue(s.queue);
+        }
+      }
+    }
+  </script>
+</body>
+</html>

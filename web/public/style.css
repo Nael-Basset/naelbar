@@ -123,5 +123,11 @@ h3{font-size:.8rem;font-weight:600;color:var(--mut);text-transform:uppercase;let
 button:disabled{opacity:.4;cursor:default}
 
 /* Musique */
-.remote{display:block;width:100%;height:calc(100dvh - 64px - env(safe-area-inset-bottom) - 56px - 50px);border:0;background:var(--bg)}
+/* L'onglet occupe tout l'écran au-dessus des onglets ; la télécommande remplit le reste. */
+#tab-music:not([hidden]){position:fixed;left:0;right:0;top:0;bottom:calc(56px + env(safe-area-inset-bottom));display:flex;flex-direction:column;max-width:none}
+#music{flex:1;min-height:0;display:flex;flex-direction:column}
+.remote{flex:1;min-height:0;display:block;width:100%;border:0;background:var(--bg)}
 .scan-video{width:100%;border-radius:12px;margin-top:10px;background:#000}
+.install{position:fixed;z-index:30;left:12px;right:12px;bottom:calc(64px + env(safe-area-inset-bottom));display:flex;align-items:center;gap:10px;padding:10px 10px 10px 14px;background:var(--tile2);border:1px solid var(--line);border-radius:14px}
+.install[hidden]{display:none}
+.install p{flex:1;margin:0;font-size:.85rem;color:var(--mut)}

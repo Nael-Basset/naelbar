@@ -4,7 +4,9 @@
 // range dans le compte (users/{uid}/meta/music). Cet onglet le suit.
 import { doc, onSnapshot } from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js';
 
-const REMOTE = 'https://nael-basset.github.io/ytm-remote/';
+// Copie de ytm-remote/index.html servie par ce site (même origine, même
+// mise en page corrigée que l'original).
+const REMOTE = '/ytm/index.html?v=1';
 const ROOM = /^ytm-[a-f0-9]{24}$/;
 
 export function startMusic({ db, uid, ui: { $, el } }) {
