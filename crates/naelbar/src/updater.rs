@@ -54,6 +54,7 @@ pub fn start(sink: Sink) {
     if is_dev_build(&exe) {
         return;
     }
+    remove_old_later(&exe);
     let _ = std::thread::Builder::new().name("naelbar-update".into()).spawn(move || {
         std::thread::sleep(FIRST_CHECK);
         loop {
@@ -129,13 +130,57 @@ fn update(exe: &Path) -> Result<Option<String>, Box<dyn std::error::Error>> {
     Ok(Some(release.version))
 }
 
-/// After the island closed for an update, starts the new version.
+/// The previous version stays locked while one of its windows (settings,
+/// calendar) is still open: tries again for a few minutes, then gives up
+/// until the next start.
+fn remove_old_later(exe: &Path) {
+    let old = sibling(exe, "naelbar.old.exe");
+    if !old.exists() {
+        return;
+    }
+    let _ = std::thread::Builder::new().name("naelbar-update-cleanup".into()).spawn(move || {
+        for _ in 0..20 {
+            std::thread::sleep(Duration::from_secs(15));
+            if std::fs::remove_file(&old).is_ok() || !old.exists() {
+                return;
+            }
+        }
+    });
+}
+
+/// Closes a window of the old version and waits for it to go. True when it
+/// was open.
+fn close_window(class: windows::core::PCWSTR) -> bool {
+    use windows::Win32::Foundation::{LPARAM, WPARAM};
+    use windows::Win32::UI::WindowsAndMessaging::{FindWindowW, IsWindow, PostMessageW, WM_CLOSE};
+    unsafe {
+        let Ok(h) = FindWindowW(class, windows::core::PCWSTR::null()) else { return false };
+        let _ = PostMessageW(Some(h), WM_CLOSE, WPARAM(0), LPARAM(0));
+        for _ in 0..30 {
+            if !IsWindow(Some(h)).as_bool() {
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(100));
+        }
+        true
+    }
+}
+
+/// After the island closed for an update, starts the new version. Windows
+/// of the old one are closed, so nothing keeps showing the old version, and
+/// the settings reopen on their About page.
 pub fn relaunch_if_updated() {
     if !RESTART.load(Ordering::SeqCst) {
         return;
     }
-    if let Some(exe) = EXE.get() {
-        let _ = std::process::Command::new(exe).spawn();
+    let settings = close_window(windows::core::w!("naelbar.settings"));
+    close_window(windows::core::w!("naelbar.agendawin"));
+    let Some(exe) = EXE.get() else { return };
+    let _ = std::process::Command::new(exe).spawn();
+    if settings {
+        // Its process lets go of its lock just after its window.
+        std::thread::sleep(Duration::from_millis(500));
+        let _ = std::process::Command::new(exe).arg("--settings").arg("--section=5").spawn();
     }
 }
 
