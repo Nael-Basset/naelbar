@@ -27,6 +27,12 @@ pub trait View {
     }
 }
 
+/// The tabs the user keeps. Never none: hiding them all shows them all.
+pub fn shown(hidden: &[String]) -> Vec<Box<dyn View>> {
+    let kept: Vec<_> = all().into_iter().filter(|v| !hidden.iter().any(|h| h == v.name())).collect();
+    if kept.is_empty() { all() } else { kept }
+}
+
 pub fn all() -> Vec<Box<dyn View>> {
     vec![
         Box::new(media::MediaView),
@@ -47,4 +53,19 @@ pub fn empty_state(ui: &mut Ui, area: Rect, icon: Icon, text: &str) {
     ui.icon(icon, Rect::new(c.x - 18.0, c.y - 34.0, 36.0, 36.0), TEXT_FAINT);
     let t = TextStyle::new(13.0, 400, TEXT_DIM).aligned(Align::Center);
     ui.text(Rect::new(area.x, c.y + 8.0, area.w, 22.0), text, t);
+}
+
+#[cfg(test)]
+mod shown_tests {
+    use super::*;
+
+    #[test]
+    fn hidden_tabs_leave_and_never_all() {
+        let n = all().len();
+        let kept = shown(&["dock".into(), "claude".into()]);
+        assert_eq!(kept.len(), n - 2);
+        assert!(kept.iter().all(|v| v.name() != "dock" && v.name() != "claude"));
+        let every: Vec<String> = all().iter().map(|v| v.name().to_string()).collect();
+        assert_eq!(shown(&every).len(), n);
+    }
 }

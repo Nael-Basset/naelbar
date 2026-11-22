@@ -158,6 +158,8 @@ pub struct Config {
     pub phone_port: u16,
     /// Installs new releases from GitHub by itself. On by default.
     pub auto_update: bool,
+    /// Island tabs the user hid, by name (`media`, `dock`…).
+    pub hidden_tabs: Vec<String>,
 }
 
 impl Default for Config {
@@ -211,6 +213,7 @@ impl Default for Config {
             phone_remote: false,
             phone_port: crate::phone::DEFAULT_PORT,
             auto_update: true,
+            hidden_tabs: Vec::new(),
         }
     }
 }

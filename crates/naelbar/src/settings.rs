@@ -47,6 +47,7 @@ const SECTIONS: &[(&str, &str)] = &[
     ("Musique", "Music"),
     ("Activités", "Activities"),
     ("Téléphone", "Phone"),
+    ("Onglets", "Tabs"),
 ];
 
 /// Index of the Music page in [`SECTIONS`].
@@ -55,6 +56,30 @@ const MUSIC_SECTION: usize = 8;
 const ACTIVITY_SECTION: usize = 9;
 /// Index of the Phone page in [`SECTIONS`].
 const PHONE_SECTION: usize = 10;
+/// Index of the island tabs page in [`SECTIONS`].
+const TABS_SECTION: usize = 11;
+
+/// One row per island tab: shown or hidden.
+macro_rules! tab_row {
+    ($name:literal, $fr:literal, $en:literal) => {
+        Row {
+            section: TABS_SECTION,
+            only: Only::Any,
+            title: ($fr, $en),
+            desc: ("Onglet de l'îlot. Masqué, il disparaît de la barre d'onglets.", "Island tab. Hidden, it leaves the tab bar."),
+            ctl: Ctl::Choice(
+                |c| if c.hidden_tabs.iter().any(|t| t == $name) { "off" } else { "on" },
+                |c, v| {
+                    c.hidden_tabs.retain(|t| t != $name);
+                    if v == "off" {
+                        c.hidden_tabs.push($name.into());
+                    }
+                },
+                &[("off", "Masqué", "Hidden"), ("on", "Affiché", "Shown")],
+            ),
+        }
+    };
+}
 
 const WM_DOCK_SCANNED: u32 = WM_APP + 40;
 const DOCK_ROW: f32 = 40.0;
@@ -156,6 +181,15 @@ struct Row {
 }
 
 static ROWS: &[Row] = &[
+    tab_row!("media", "Média", "Media"),
+    tab_row!("quick", "Raccourcis", "Shortcuts"),
+    tab_row!("widgets", "Widgets", "Widgets"),
+    tab_row!("agenda", "Agenda", "Calendar"),
+    tab_row!("claude", "Claude", "Claude"),
+    tab_row!("clipboard", "Presse-papiers", "Clipboard"),
+    tab_row!("notifications", "Notifications", "Notifications"),
+    tab_row!("shelf", "Étagère", "Shelf"),
+    tab_row!("dock", "Dock", "Dock"),
     Row {
         section: 0,
         only: Only::Any,
@@ -502,6 +536,36 @@ static ROWS: &[Row] = &[
         ctl: Ctl::CoursesRoot,
     },
 ];
+
+/// What the "Check" button found, shown next to the version.
+static UPDATE_STATUS: std::sync::Mutex<String> = std::sync::Mutex::new(String::new());
+
+/// Asks GitHub from here, to say at once whether there is something new; the
+/// island does the install (it is the one that restarts).
+fn check_update(hwnd: HWND) {
+    let set = |s: String| *UPDATE_STATUS.lock().unwrap_or_else(|e| e.into_inner()) = s;
+    set(tr("Recherche…", "Checking…").into());
+    let hwnd = hwnd.0 as isize;
+    std::thread::spawn(move || {
+        let msg = match nb_integrations::check_update(env!("CARGO_PKG_VERSION")) {
+            Ok(None) => tr("À jour", "Up to date").to_string(),
+            Ok(Some(r)) => unsafe {
+                match FindWindowW(w!("naelbar.window"), w!("naelbar control")) {
+                    Ok(island) => {
+                        let _ = PostMessageW(Some(island), crate::updater::WM_UPDATE_NOW, WPARAM(0), LPARAM(0));
+                        format!("{} {}…", tr("Installation de la", "Installing"), r.version)
+                    }
+                    Err(_) => format!("{} {}", r.version, tr("disponible, lance naelbar", "available, start naelbar")),
+                }
+            },
+            Err(_) => tr("Pas de connexion à GitHub", "Cannot reach GitHub").to_string(),
+        };
+        *UPDATE_STATUS.lock().unwrap_or_else(|e| e.into_inner()) = msg;
+        unsafe {
+            let _ = windows::Win32::Graphics::Gdi::InvalidateRect(Some(HWND(hwnd as *mut _)), None, false);
+        }
+    });
+}
 
 static ACCOUNT_BUSY: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
@@ -1043,7 +1107,13 @@ impl Settings {
                     }
                 }
                 Ctl::Version => {
-                    ui.text(ctrl, env!("CARGO_PKG_VERSION"), TextStyle::new(13.0, 500, TEXT_DIM).aligned(Align::End));
+                    let r = Rect::new(ctrl.right() - 110.0, ctrl.y, 110.0, ctrl.h);
+                    let status = UPDATE_STATUS.lock().unwrap_or_else(|e| e.into_inner()).clone();
+                    let label = if status.is_empty() { env!("CARGO_PKG_VERSION").to_string() } else { format!("{} · {status}", env!("CARGO_PKG_VERSION")) };
+                    ui.text(Rect::new(ctrl.x - 120.0, ctrl.y, ctrl.w + 120.0 - 122.0, ctrl.h), &label, TextStyle::new(13.0, 500, TEXT_DIM).aligned(Align::End));
+                    if button(&mut ui, w, r, tr("Rechercher", "Check")) {
+                        check_update(self.hwnd);
+                    }
                 }
                 Ctl::FpsRights => {
                     // Copied only; the user runs it in an admin terminal.
@@ -1462,6 +1532,10 @@ mod tests {
     #[test]
     fn phone_section_index_matches() {
         assert_eq!(SECTIONS[PHONE_SECTION].1, "Phone");
+        assert_eq!(SECTIONS[TABS_SECTION].1, "Tabs");
+        // Every island tab has its row, and no row names a missing tab.
+        let names: Vec<&str> = crate::views::all().iter().map(|v| v.name()).collect();
+        assert_eq!(ROWS.iter().filter(|r| r.section == TABS_SECTION).count(), names.len());
     }
 
     #[test]

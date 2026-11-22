@@ -248,7 +248,7 @@ pub fn run(demo: bool, start_open: bool, start_tab: Option<String>) -> Result<()
             eprintln!("naelbar: could not register hotkey {f}");
         }
 
-        let views = views::all();
+        let views = views::shown(&config.hidden_tabs);
         let tab = views.iter().position(|v| v.name() == config.last_tab).unwrap_or(0);
         let saved_tab = config.last_tab.clone();
         let tray = Tray::add(ctrl);
@@ -657,6 +657,11 @@ impl App {
         }
         self.state.weather_configured = fresh.weather_location.is_some();
         crate::shelf_store::set_captures(fresh.shelf_captures, self.ctrl.0 as isize);
+        if fresh.hidden_tabs != self.config.hidden_tabs {
+            let current = self.views[self.tab].name();
+            self.views = crate::views::shown(&fresh.hidden_tabs);
+            self.tab = self.views.iter().position(|v| v.name() == current).unwrap_or(0);
+        }
         self.config = fresh;
         crate::phone::sync(&self.config);
         crate::desktop::sync(&self.config.desktop_widget);
@@ -778,6 +783,10 @@ impl App {
             }
             crate::widgets::WM_ICS_READY if hwnd == self.ctrl => {
                 self.dirty = true;
+                Some(0)
+            }
+            crate::updater::WM_UPDATE_NOW if hwnd == self.ctrl => {
+                crate::updater::check_now();
                 Some(0)
             }
             WM_AGENDA_CHANGED if hwnd == self.ctrl => {

@@ -19,6 +19,19 @@ use crate::config::Config;
 /// Set when the island closed to restart on a new version.
 pub static RESTART: AtomicBool = AtomicBool::new(false);
 static EXE: OnceLock<PathBuf> = OnceLock::new();
+static SINK: OnceLock<Sink> = OnceLock::new();
+
+/// Posted to the island by the settings' "Check now" button.
+pub const WM_UPDATE_NOW: u32 = windows::Win32::UI::WindowsAndMessaging::WM_APP + 72;
+
+/// Last outcome, kept in `%LOCALAPPDATA%\naelbar\update.log` (one line).
+fn note(msg: &str) {
+    if let Some(d) = std::env::var_os("LOCALAPPDATA") {
+        let p = PathBuf::from(d).join("naelbar");
+        let _ = std::fs::create_dir_all(&p);
+        let _ = std::fs::write(p.join("update.log"), msg);
+    }
+}
 
 const FIRST_CHECK: Duration = Duration::from_secs(60);
 const EVERY: Duration = Duration::from_secs(24 * 3600);
@@ -37,6 +50,7 @@ pub fn start(sink: Sink) {
     let _ = std::fs::remove_file(sibling(&exe, "naelbar.old.exe"));
     let _ = std::fs::remove_file(sibling(&exe, "naelbar.new.exe"));
     let _ = EXE.set(exe.clone());
+    let _ = SINK.set(sink.clone());
     if is_dev_build(&exe) {
         return;
     }
@@ -44,17 +58,43 @@ pub fn start(sink: Sink) {
         std::thread::sleep(FIRST_CHECK);
         loop {
             if Config::load().auto_update {
-                match update(&exe) {
-                    Ok(Some(version)) => {
-                        sink(Event::UpdateReady(version));
-                        return;
-                    }
-                    Ok(None) => {}
-                    Err(e) => eprintln!("naelbar update: {e}"),
+                if run(&exe, &sink) {
+                    return;
                 }
             }
             std::thread::sleep(EVERY);
         }
+    });
+}
+
+/// One check, and the update if there is one. True when the island restarts.
+fn run(exe: &Path, sink: &Sink) -> bool {
+    match update(exe) {
+        Ok(Some(version)) => {
+            note(&format!("installée : {version}"));
+            sink(Event::UpdateReady(version));
+            true
+        }
+        Ok(None) => {
+            note(&format!("à jour : {}", env!("CARGO_PKG_VERSION")));
+            false
+        }
+        Err(e) => {
+            note(&format!("échec : {e}"));
+            false
+        }
+    }
+}
+
+/// The settings asked: checks right away, whatever the daily schedule.
+pub fn check_now() {
+    let (Some(exe), Some(sink)) = (EXE.get().cloned(), SINK.get().cloned()) else { return };
+    if is_dev_build(&exe) {
+        note("échec : version compilée depuis le code, pas de mise à jour automatique");
+        return;
+    }
+    let _ = std::thread::Builder::new().name("naelbar-update-now".into()).spawn(move || {
+        run(&exe, &sink);
     });
 }
 
